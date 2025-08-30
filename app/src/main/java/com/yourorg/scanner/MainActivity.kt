@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.sp
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
@@ -91,21 +93,33 @@ fun ScannerApp(
         topBar = {
             TopAppBar(
                 title = { 
+                    val configuration = LocalConfiguration.current
+                    val screenWidth = configuration.screenWidthDp.dp
+                    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                    
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
                             Icons.Default.FactCheck,
                             contentDescription = "App Logo",
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(if (isLandscape) 28.dp else 32.dp),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(if (isLandscape) 8.dp else 12.dp))
                         Text(
                             "Charleston Law Event Scanner", 
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            fontSize = when {
+                                isLandscape -> 16.sp
+                                screenWidth < 360.dp -> 18.sp
+                                else -> 20.sp
+                            },
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 },
@@ -158,7 +172,11 @@ fun ScannerApp(
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Forgot ID?")
+                        Text(
+                            "FORGOT ID?",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
                 
@@ -1254,7 +1272,7 @@ fun EventHeaderCard(
                 
                 if (currentEvent != null) {
                     Text(
-                        text = "Event #${currentEvent.eventNumber}: ${currentEvent.name}",
+                        text = "Event ID ${currentEvent.eventNumber}: ${currentEvent.name}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
