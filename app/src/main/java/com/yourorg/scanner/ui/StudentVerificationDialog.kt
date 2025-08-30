@@ -11,6 +11,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -31,15 +33,30 @@ fun StudentVerificationDialog(
     student: Student?,
     scannedId: String,
     onDismiss: () -> Unit,
+    onSubmitErrorRecord: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showDialog by remember { mutableStateOf(true) }
+    var isInteracting by remember { mutableStateOf(false) }
     
     // Auto-dismiss after 4 seconds for successful verification, 6 seconds for failure
+    // But only if user is not interacting with the dialog
     LaunchedEffect(student) {
-        delay(if (student != null) 4000 else 6000)
-        showDialog = false
-        onDismiss()
+        if (student != null) {
+            // Success dialog - auto dismiss after 4 seconds
+            delay(4000)
+            if (!isInteracting) {
+                showDialog = false
+                onDismiss()
+            }
+        } else {
+            // Failure dialog - auto dismiss after 6 seconds if not interacting
+            delay(6000)
+            if (!isInteracting) {
+                showDialog = false
+                onDismiss()
+            }
+        }
     }
     
     if (showDialog) {
@@ -87,6 +104,10 @@ fun StudentVerificationDialog(
                         onDismiss = { 
                             showDialog = false
                             onDismiss() 
+                        },
+                        onSubmitErrorRecord = onSubmitErrorRecord,
+                        onInteractionChanged = { interacting ->
+                            isInteracting = interacting
                         }
                     )
                 }
@@ -214,8 +235,18 @@ private fun SuccessDialog(
 private fun FailureDialog(
     scannedId: String,
     isTablet: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onSubmitErrorRecord: ((String, String) -> Unit)? = null,
+    onInteractionChanged: (Boolean) -> Unit = {}
 ) {
+    var email by remember { mutableStateOf("") }
+    var isEmailValid by remember { mutableStateOf(false) }
+    var showEmailInput by remember { mutableStateOf(false) }
+    
+    // Notify parent when email input is shown/hidden
+    LaunchedEffect(showEmailInput) {
+        onInteractionChanged(showEmailInput)
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth(if (isTablet) 0.6f else 0.9f)
@@ -301,29 +332,128 @@ private fun FailureDialog(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            Text(
-                text = "Please contact the administrator or verify the correct student ID",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Close Button
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD32F2F)
-                )
-            ) {
+            // Email Input Section
+            if (showEmailInput) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Please enter your email to report this issue:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { 
+                            email = it
+                            isEmailValid = android.util.Patterns.EMAIL_ADDRESS.matcher(it).matches()
+                            onInteractionChanged(true) // User is typing
+                        },
+                        label = { Text("Email Address") },
+                        placeholder = { Text("student@example.com") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        isError = email.isNotEmpty() && !isEmailValid,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    if (email.isNotEmpty() && !isEmailValid) {
+                        Text(
+                            text = "Please enter a valid email address",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Submit and Cancel Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { 
+                            showEmailInput = false
+                            email = ""
+                            onInteractionChanged(false)
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            "Cancel",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    
+                    Button(
+                        onClick = {
+                            if (isEmailValid) {
+                                onSubmitErrorRecord?.invoke(scannedId, email)
+                                onInteractionChanged(false)
+                                onDismiss()
+                            }
+                        },
+                        enabled = isEmailValid,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(
+                            "Submit",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                }
+            } else {
                 Text(
-                    "Close",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    text = "Please contact the administrator or verify the correct student ID",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
                 )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Report Issue and Close Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (onSubmitErrorRecord != null) {
+                        OutlinedButton(
+                            onClick = { showEmailInput = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                "Report Issue",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
+                    
+                    Button(
+                        onClick = onDismiss,
+                        modifier = if (onSubmitErrorRecord != null) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFD32F2F)
+                        )
+                    ) {
+                        Text(
+                            "Close",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                }
             }
         }
     }

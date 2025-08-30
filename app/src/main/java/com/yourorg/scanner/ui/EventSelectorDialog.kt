@@ -24,6 +24,9 @@ fun EventSelectorDialog(
     currentEvent: Event?,
     onEventSelected: (Event) -> Unit,
     onCreateNewEvent: () -> Unit,
+    onStartEvent: (Event) -> Unit = {},
+    onCompleteEvent: (Event) -> Unit = {},
+    onReopenEvent: (Event) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -104,7 +107,10 @@ fun EventSelectorDialog(
                             EventCard(
                                 event = event,
                                 isSelected = currentEvent?.id == event.id,
-                                onSelected = { onEventSelected(event) }
+                                onSelected = { onEventSelected(event) },
+                                onStartEvent = onStartEvent,
+                                onCompleteEvent = onCompleteEvent,
+                                onReopenEvent = onReopenEvent
                             )
                         }
                     }
@@ -132,7 +138,10 @@ fun EventSelectorDialog(
 private fun EventCard(
     event: Event,
     isSelected: Boolean,
-    onSelected: () -> Unit
+    onSelected: () -> Unit,
+    onStartEvent: (Event) -> Unit = {},
+    onCompleteEvent: (Event) -> Unit = {},
+    onReopenEvent: (Event) -> Unit = {}
 ) {
     val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.US)
     
@@ -173,20 +182,26 @@ private fun EventCard(
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
-                    if (event.isActive) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.secondary
-                            )
-                        ) {
-                            Text(
-                                text = "ACTIVE",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondary
-                            )
-                        }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = when (event.status) {
+                                com.yourorg.scanner.model.EventStatus.ACTIVE -> MaterialTheme.colorScheme.primary
+                                com.yourorg.scanner.model.EventStatus.INACTIVE -> MaterialTheme.colorScheme.outline
+                                com.yourorg.scanner.model.EventStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
+                            }
+                        )
+                    ) {
+                        Text(
+                            text = when (event.status) {
+                                com.yourorg.scanner.model.EventStatus.ACTIVE -> "ACTIVE"
+                                com.yourorg.scanner.model.EventStatus.INACTIVE -> "INACTIVE"
+                                com.yourorg.scanner.model.EventStatus.COMPLETED -> "COMPLETED"
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                 }
                 

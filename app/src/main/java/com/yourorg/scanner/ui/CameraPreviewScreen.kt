@@ -4,14 +4,18 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.FlipCameraAndroid
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -29,12 +33,18 @@ fun CameraPreviewScreen(
     onBackPressed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Add a solid background to prevent bleed-through
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var scanner by remember { mutableStateOf<CameraXScanner?>(null) }
     var isFlashOn by remember { mutableStateOf(false) }
     var isScanning by remember { mutableStateOf(false) }
+    var autoDetectEnabled by remember { mutableStateOf(true) }
     var hasPermission by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
@@ -73,6 +83,8 @@ fun CameraPreviewScreen(
                     isScanning = false
                 }
                 scanner = cameraScanner
+                // Enable auto-detect by default
+                cameraScanner.setAutoDetect(true)
             } catch (e: Exception) {
                 errorMessage = "Camera initialization failed: ${e.message}"
                 android.util.Log.e("CameraPreview", "Camera init error", e)
@@ -87,36 +99,69 @@ fun CameraPreviewScreen(
     }
 
     Column(
-        modifier = modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize()
     ) {
-        // Top Bar
-        TopAppBar(
-            title = { Text("Scan Barcode") },
-            navigationIcon = {
+        // Compact Top Bar
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 IconButton(onClick = onBackPressed) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
-            },
-            actions = {
+                
+                Text(
+                    "Scan Barcode",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // Compact action buttons
                 IconButton(
-                    onClick = { 
-                        isFlashOn = !isFlashOn
-                        // TODO: Implement flash toggle
-                    }
+                    onClick = { scanner?.switchCamera() },
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                        contentDescription = if (isFlashOn) "Turn flash off" else "Turn flash on"
+                        Icons.Default.FlipCameraAndroid,
+                        contentDescription = "Switch camera",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                
+                IconButton(
+                    onClick = { 
+                        autoDetectEnabled = !autoDetectEnabled
+                        scanner?.setAutoDetect(autoDetectEnabled)
+                    },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.Default.QrCodeScanner,
+                        contentDescription = if (autoDetectEnabled) "Auto-detect ON" else "Auto-detect OFF",
+                        tint = if (autoDetectEnabled) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
-        )
+        }
 
-        // Camera Preview or Permission Request
+        // Camera Preview or Permission Request with solid background
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .background(Color.Black)
         ) {
             if (hasPermission) {
                 AndroidView(
@@ -182,36 +227,65 @@ fun CameraPreviewScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "Position barcode within the frame",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                if (autoDetectEnabled) "Auto-detect is ON - Point at barcode" else "Position barcode within the frame",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (autoDetectEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            Button(
-                onClick = {
-                    if (!isScanning) {
-                        isScanning = true
-                        scope.launch {
-                            scanner?.triggerScan()
+            if (!autoDetectEnabled) {
+                Button(
+                    onClick = {
+                        if (!isScanning) {
+                            isScanning = true
+                            scope.launch {
+                                scanner?.triggerScan()
+                            }
                         }
+                    },
+                    enabled = !isScanning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isScanning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Scanning...")
+                    } else {
+                        Text("Tap to Scan")
                     }
-                },
-                enabled = !isScanning,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (isScanning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Scanning...")
-                } else {
-                    Text("Tap to Scan")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            "Auto-detecting barcodes...",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
                 }
             }
         }
+    }
     }
 }

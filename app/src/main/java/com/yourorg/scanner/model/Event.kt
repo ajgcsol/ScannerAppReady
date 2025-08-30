@@ -14,6 +14,8 @@ data class Event(
     val date: Long,
     val location: String = "",
     val isActive: Boolean = true,
+    val isCompleted: Boolean = false,
+    val completedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
     val customColumns: List<EventColumn> = emptyList(),
@@ -26,6 +28,13 @@ data class Event(
     
     val shortDate: String
         get() = SimpleDateFormat("MMM dd", Locale.US).format(Date(date))
+        
+    val status: EventStatus
+        get() = when {
+            isCompleted -> EventStatus.COMPLETED
+            isActive -> EventStatus.ACTIVE
+            else -> EventStatus.INACTIVE
+        }
         
     // Generate filename for text export (matches Python script format)
     val exportFilename: String
@@ -173,4 +182,10 @@ enum class ExportFormat {
     FIXED_WIDTH,
     XLSX,
     TEXT_DELIMITED // For Python script compatibility
+}
+
+enum class EventStatus {
+    ACTIVE,
+    INACTIVE,
+    COMPLETED
 }

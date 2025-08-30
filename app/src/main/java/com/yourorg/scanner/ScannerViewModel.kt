@@ -19,6 +19,8 @@ import com.yourorg.scanner.scanner.HoneywellScanner
 import com.yourorg.scanner.scanner.CameraXScanner
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import java.util.*
 
 data class ScannerUiState(
@@ -29,6 +31,10 @@ data class ScannerUiState(
     val isScanning: Boolean = false,
     val isConnected: Boolean = false,
     val errorMessage: String? = null,
+    // Offline sync status
+    val unsyncedScanCount: Int = 0,
+    val lastSyncTime: Long? = null,
+    val isSyncing: Boolean = false,
     val isExporting: Boolean = false,
     val deviceInfo: String = "",
     val userName: String = "User",
@@ -44,7 +50,10 @@ data class ScannerUiState(
     val currentEvent: Event? = null,
     val availableEvents: List<Event> = emptyList(),
     val showEventSelector: Boolean = false,
-    val showNewEventDialog: Boolean = false
+    val showNewEventDialog: Boolean = false,
+    // Duplicate scan detection
+    val showDuplicateDialog: Boolean = false,
+    val duplicateStudent: Student? = null
 )
 
 class ScannerViewModel(
@@ -62,14 +71,19 @@ class ScannerViewModel(
         context,
         AppDb::class.java,
         "scanner_db"
-    ).build()
+    ).fallbackToDestructiveMigration()
+    .build()
     
     private val sharedPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val scanDao = database.scanDao()
     private val firestoreSync = FirestoreSync()
     private val honeywellScanner = HoneywellScanner(context)
-    private val studentRepository = StudentRepository()
+    
+    // Offline support components
+    private val connectivityMonitor = com.yourorg.scanner.data.sync.ConnectivityMonitor(context)
+    private val syncManager = com.yourorg.scanner.data.sync.OfflineSyncManager(context, database, connectivityMonitor)
+    private val studentRepository = StudentRepository(context, database, connectivityMonitor, syncManager)
     private val eventRepository = EventRepository()
 
     // UI State
@@ -86,6 +100,8 @@ class ScannerViewModel(
         loadEvents()
         loadScans()
         observeFirestoreChanges()
+        observeConnectivity()
+        updateSyncStatus()
     }
 
     private fun initializeScanner() {
@@ -114,15 +130,7 @@ class ScannerViewModel(
                 val currentListId = _uiState.value.currentListId
                 val localScans = scanDao.scansForList(currentListId)
                 val scanRecords = localScans.map { entity ->
-                    ScanRecord(
-                        id = entity.id,
-                        code = entity.code,
-                        symbology = entity.symbology,
-                        timestamp = entity.timestamp,
-                        deviceId = entity.deviceId,
-                        userId = entity.userId,
-                        listId = entity.listId
-                    )
+                    entity.toScanRecord()
                 }
                 
                 updateState { 
@@ -181,45 +189,62 @@ class ScannerViewModel(
                 // Look up student by scanned ID
                 val student = studentRepository.findStudentById(code)
                 
-                // Record the scan with verification status
+                // Check for duplicate scan in current event
+                val currentEventId = _uiState.value.currentEvent?.id
+                if (currentEventId != null) {
+                    val isDuplicate = checkForDuplicateScan(code, currentEventId)
+                    if (isDuplicate) {
+                        // Show duplicate dialog instead of recording
+                        updateState { 
+                            it.copy(
+                                showDuplicateDialog = true,
+                                duplicateStudent = student,
+                                scannedStudentId = code,
+                                isScanning = false
+                            )
+                        }
+                        return@launch
+                    }
+                }
+                
+                // Record the scan with verification status (this handles both local storage and background sync)
                 studentRepository.recordScan(
                     studentId = code,
                     student = student,
-                    deviceId = _uiState.value.deviceInfo
+                    deviceId = _uiState.value.deviceInfo,
+                    eventId = currentEventId,
+                    listId = _uiState.value.currentListId
                 )
                 
-                // Update analytics
-                studentRepository.updateScanAnalytics(student != null)
-                
-                val scanRecord = ScanRecord(
+                // Update analytics in background (non-blocking)
+                CoroutineScope(Dispatchers.IO).launch {
+                    studentRepository.updateScanAnalytics(student != null)
+                }
+
+                // Quickly update UI with new scan instead of full refresh
+                val newScan = ScanRecord(
                     id = UUID.randomUUID().toString(),
                     code = code,
-                    symbology = symbology ?: "UNKNOWN",
+                    symbology = symbology ?: "QR_CODE",
                     timestamp = System.currentTimeMillis(),
                     deviceId = _uiState.value.deviceInfo,
                     userId = _uiState.value.userName,
-                    listId = _uiState.value.currentListId
-                )
-
-                // Save locally
-                val entity = ScanEntity(
-                    id = scanRecord.id,
-                    code = scanRecord.code,
-                    symbology = scanRecord.symbology,
-                    timestamp = scanRecord.timestamp,
-                    deviceId = scanRecord.deviceId,
-                    userId = scanRecord.userId,
-                    listId = scanRecord.listId,
-                    synced = false
+                    listId = _uiState.value.currentListId,
+                    verified = student != null,
+                    firstName = student?.firstName ?: "",
+                    lastName = student?.lastName ?: "",
+                    email = student?.email ?: "",
+                    program = student?.program ?: "",
+                    year = student?.year ?: ""
                 )
                 
-                scanDao.upsertAll(listOf(entity))
-
-                // Upload to cloud
-                firestoreSync.addScan(_uiState.value.currentListId, scanRecord)
-                scanDao.markSynced(listOf(scanRecord.id))
-
-                loadScans() // Refresh UI
+                updateState { state ->
+                    state.copy(
+                        scans = listOf(newScan) + state.scans,
+                        lastScan = newScan,
+                        scanCount = state.scanCount + 1
+                    )
+                }
                 
                 // Show student verification dialog
                 updateState { 
@@ -242,6 +267,32 @@ class ScannerViewModel(
                     ) 
                 }
             }
+        }
+    }
+    
+    /**
+     * Check if a student has already been scanned for the current event
+     */
+    private suspend fun checkForDuplicateScan(studentId: String, eventId: String): Boolean {
+        return try {
+            val existingScans = scanDao.getScansForStudentInEvent(studentId, eventId)
+            existingScans.isNotEmpty()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for duplicate scan", e)
+            false
+        }
+    }
+    
+    /**
+     * Dismiss duplicate scan dialog
+     */
+    fun dismissDuplicateDialog() {
+        updateState { 
+            it.copy(
+                showDuplicateDialog = false,
+                duplicateStudent = null,
+                scannedStudentId = ""
+            ) 
         }
     }
 
@@ -341,21 +392,47 @@ class ScannerViewModel(
             ) 
         }
     }
+    
+    fun submitErrorRecord(scannedId: String, email: String) {
+        viewModelScope.launch {
+            try {
+                val currentEvent = _uiState.value.currentEvent
+                if (currentEvent != null) {
+                    // Save error record to Firebase
+                    firestoreSync.saveErrorRecord(
+                        scannedId = scannedId,
+                        email = email,
+                        eventId = currentEvent.id,
+                        eventName = currentEvent.name,
+                        eventDate = currentEvent.formattedDate
+                    )
+                    Log.d(TAG, "Error record submitted for $scannedId with email $email")
+                }
+                hideStudentDialog()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to submit error record", e)
+                updateState { it.copy(errorMessage = "Failed to submit error record") }
+            }
+        }
+    }
 
     // Event Management Functions
     private fun loadEvents() {
         viewModelScope.launch {
             try {
-                eventRepository.getAllEvents().collect { events ->
+                eventRepository.getAllEvents().collect { allEvents ->
+                    // Filter to only show incomplete events (not completed)
+                    val incompleteEvents = allEvents.filter { !it.isCompleted }
+                    
                     // Try to restore previously selected event
                     val savedEventId = sharedPrefs.getString(KEY_CURRENT_EVENT_ID, null)
-                    val currentEvent = events.find { it.id == savedEventId }
-                        ?: events.find { it.isActive } 
-                        ?: events.firstOrNull()
+                    val currentEvent = incompleteEvents.find { it.id == savedEventId }
+                        ?: incompleteEvents.find { it.isActive } 
+                        ?: incompleteEvents.firstOrNull()
                     
                     updateState { 
                         it.copy(
-                            availableEvents = events,
+                            availableEvents = incompleteEvents,
                             currentEvent = currentEvent
                         ) 
                     }
@@ -435,17 +512,217 @@ class ScannerViewModel(
             eventRepository.getEventAttendees(eventId).first()
         } catch (e: Exception) {
             Log.e(TAG, "Error getting event attendees", e)
-            emptyList()
+            throw e
+        }
+    }
+    
+    /**
+     * Start/activate an event
+     */
+    fun startEvent(event: Event) {
+        viewModelScope.launch {
+            try {
+                val updatedEvent = event.copy(isActive = true, isCompleted = false)
+                eventRepository.updateEvent(updatedEvent)
+                loadEvents()
+                Log.d(TAG, "Event started: ${event.name}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start event", e)
+                updateState { it.copy(errorMessage = "Failed to start event: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Complete an event
+     */
+    fun completeEvent(event: Event) {
+        viewModelScope.launch {
+            try {
+                val updatedEvent = event.copy(
+                    isActive = false, 
+                    isCompleted = true,
+                    completedAt = System.currentTimeMillis()
+                )
+                eventRepository.updateEvent(updatedEvent)
+                loadEvents()
+                Log.d(TAG, "Event completed: ${event.name}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to complete event", e)
+                updateState { it.copy(errorMessage = "Failed to complete event: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Reopen a completed event
+     */
+    fun reopenEvent(event: Event) {
+        viewModelScope.launch {
+            try {
+                val updatedEvent = event.copy(
+                    isActive = true, 
+                    isCompleted = false,
+                    completedAt = null
+                )
+                eventRepository.updateEvent(updatedEvent)
+                loadEvents()
+                Log.d(TAG, "Event reopened: ${event.name}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reopen event", e)
+                updateState { it.copy(errorMessage = "Failed to reopen event: ${e.message}") }
+            }
+        }
+    }
+    
+    /**
+     * Complete the current event and notify admin portal
+     */
+    fun completeCurrentEvent() {
+        viewModelScope.launch {
+            try {
+                val currentEvent = _uiState.value.currentEvent
+                if (currentEvent != null) {
+                    // Mark event as completed
+                    val updatedEvent = currentEvent.copy(
+                        isActive = false,
+                        isCompleted = true,
+                        completedAt = System.currentTimeMillis()
+                    )
+                    
+                    // Update event in repository
+                    eventRepository.updateEvent(updatedEvent)
+                    
+                    // Send notification to admin portal via Firestore
+                    firestoreSync.notifyEventCompleted(
+                        eventId = currentEvent.id,
+                        eventName = currentEvent.name,
+                        eventNumber = currentEvent.eventNumber,
+                        completedAt = updatedEvent.completedAt ?: System.currentTimeMillis(),
+                        totalScans = _uiState.value.scanCount
+                    )
+                    
+                    // Clear current event and reload
+                    sharedPrefs.edit().remove(KEY_CURRENT_EVENT_ID).apply()
+                    loadEvents()
+                    
+                    updateState { 
+                        it.copy(
+                            errorMessage = null,
+                            currentEvent = null
+                        ) 
+                    }
+                    
+                    Log.d(TAG, "Event completed and admin notified: ${currentEvent.name}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to complete event", e)
+                updateState { it.copy(errorMessage = "Failed to complete event: ${e.message}") }
+            }
         }
     }
 
     private fun updateState(update: (ScannerUiState) -> ScannerUiState) {
         _uiState.value = update(_uiState.value)
     }
+    
+    /**
+     * Observe network connectivity changes
+     */
+    private fun observeConnectivity() {
+        viewModelScope.launch {
+            connectivityMonitor.isConnected.collect { isConnected ->
+                updateState { 
+                    it.copy(isConnected = isConnected)
+                }
+                if (isConnected) {
+                    updateSyncStatus()
+                }
+            }
+        }
+    }
+    
+    /**
+     * Update sync status information
+     */
+    private fun updateSyncStatus() {
+        viewModelScope.launch {
+            try {
+                val syncStatus = syncManager.getSyncStatus()
+                updateState { 
+                    it.copy(
+                        unsyncedScanCount = syncStatus.unsyncedScanCount,
+                        lastSyncTime = syncStatus.lastSyncTime,
+                        isConnected = syncStatus.isConnected
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating sync status", e)
+            }
+        }
+    }
+    
+    /**
+     * Get local scans for export (includes all scans, not just UI list)
+     */
+    suspend fun getLocalScansForExport(): List<ScanRecord> {
+        return try {
+            val allLocalScans = scanDao.getAllScans()
+            allLocalScans.map { it.toScanRecord() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting local scans for export", e)
+            _uiState.value.scans // Fallback to UI state scans
+        }
+    }
+    
+    /**
+     * Get local scans for a specific event
+     */
+    suspend fun getLocalScansForEvent(eventId: String): List<ScanRecord> {
+        return try {
+            val eventScans = scanDao.getScansForEvent(eventId)
+            eventScans.map { it.toScanRecord() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting event scans for export", e)
+            emptyList()
+        }
+    }
+    
+    /**
+     * Trigger manual sync
+     */
+    fun triggerSync() {
+        viewModelScope.launch {
+            if (!connectivityMonitor.isCurrentlyConnected()) {
+                updateState { 
+                    it.copy(errorMessage = "No internet connection available for sync")
+                }
+                return@launch
+            }
+            
+            try {
+                updateState { it.copy(isSyncing = true) }
+                syncManager.startSync()
+                
+                // Wait a moment then update status
+                kotlinx.coroutines.delay(2000)
+                updateSyncStatus()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error triggering sync", e)
+                updateState { 
+                    it.copy(errorMessage = "Sync failed: ${e.message}")
+                }
+            } finally {
+                updateState { it.copy(isSyncing = false) }
+            }
+        }
+    }
 
     override fun onCleared() {
         super.onCleared()
         honeywellScanner.release()
+        connectivityMonitor.stopMonitoring()
     }
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {

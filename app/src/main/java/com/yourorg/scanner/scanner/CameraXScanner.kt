@@ -11,6 +11,9 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
@@ -34,6 +37,9 @@ class CameraXScanner(
     
     private var scanCallback: ((com.yourorg.scanner.scanner.ScanResult) -> Unit)? = null
     private var isScanning = false
+    private var autoDetectEnabled = false
+    private var currentCameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    private var preview: Preview? = null
 
     suspend fun initialize(onScanResult: (com.yourorg.scanner.scanner.ScanResult) -> Unit) = suspendCancellableCoroutine<Unit> { continuation ->
         try {
@@ -61,7 +67,7 @@ class CameraXScanner(
         val cameraProvider = this.cameraProvider ?: return
 
         // Preview use case
-        val preview = Preview.Builder()
+        preview = Preview.Builder()
             .build()
             .also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
@@ -74,7 +80,7 @@ class CameraXScanner(
             .build()
             .also { analysis ->
                 analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                    if (isScanning) {
+                    if (isScanning || autoDetectEnabled) {
                         processImageProxy(imageProxy)
                     } else {
                         imageProxy.close()
@@ -82,20 +88,19 @@ class CameraXScanner(
                 }
             }
 
-        // Try front camera first for emulators, then back camera
-        val availableCameras = listOf(
-            CameraSelector.DEFAULT_FRONT_CAMERA,
-            CameraSelector.DEFAULT_BACK_CAMERA
-        )
-        
-        var cameraSelector: CameraSelector? = null
-        for (selector in availableCameras) {
-            if (cameraProvider.hasCamera(selector)) {
-                cameraSelector = selector
-                Log.d(TAG, "Using camera: ${if (selector == CameraSelector.DEFAULT_FRONT_CAMERA) "FRONT" else "BACK"}")
-                break
+        // Use the current camera selector (defaults to back camera)
+        val cameraSelector = if (cameraProvider.hasCamera(currentCameraSelector)) {
+            currentCameraSelector
+        } else {
+            // Fallback to any available camera
+            when {
+                cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> CameraSelector.DEFAULT_BACK_CAMERA
+                cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
+                else -> null
             }
         }
+        
+        Log.d(TAG, "Using camera: ${if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "FRONT" else "BACK"}")
 
         try {
             // Unbind all use cases before rebinding
@@ -132,6 +137,7 @@ class CameraXScanner(
         }
     }
 
+    @androidx.camera.core.ExperimentalGetImage
     private fun processImageProxy(imageProxy: ImageProxy) {
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
@@ -144,7 +150,7 @@ class CameraXScanner(
                 .addOnSuccessListener { barcodes ->
                     for (barcode in barcodes) {
                         val rawValue = barcode.rawValue
-                        if (rawValue != null && isScanning) {
+                        if (rawValue != null && (isScanning || autoDetectEnabled)) {
                             val symbology = when (barcode.format) {
                                 Barcode.FORMAT_QR_CODE -> "QR_CODE"
                                 Barcode.FORMAT_CODE_128 -> "CODE_128"
@@ -167,9 +173,15 @@ class CameraXScanner(
                             
                             // Stop scanning to prevent duplicate scans
                             isScanning = false
+                            autoDetectEnabled = false
                             
                             Log.d(TAG, "Barcode detected: ${result.code} (${result.symbology})")
-                            scanCallback?.invoke(result)
+                            
+                            // Add a delay before invoking callback to prevent rapid duplicate scans
+                            GlobalScope.launch {
+                                delay(500) // Half second delay
+                                scanCallback?.invoke(result)
+                            }
                             break // Only process first barcode found
                         }
                     }
@@ -204,10 +216,32 @@ class CameraXScanner(
     fun stopScanning() {
         isScanning = false
     }
+    
+    fun setAutoDetect(enabled: Boolean) {
+        autoDetectEnabled = enabled
+        Log.d(TAG, "Auto-detect ${if (enabled) "enabled" else "disabled"}")
+    }
+    
+    fun switchCamera() {
+        currentCameraSelector = if (currentCameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+        
+        // Re-setup camera with new selector
+        setupCamera()
+        Log.d(TAG, "Switched to ${if (currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "FRONT" else "BACK"} camera")
+    }
+    
+    fun isUsingFrontCamera(): Boolean {
+        return currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+    }
 
     fun release() {
         try {
             isScanning = false
+            autoDetectEnabled = false
             cameraProvider?.unbindAll()
             cameraExecutor.shutdown()
             barcodeScanner.close()

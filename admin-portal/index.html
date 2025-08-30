@@ -39,6 +39,86 @@
             opacity: 0.9;
         }
         
+        /* Notification styles */
+        .notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 400px;
+        }
+        
+        .notification {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease;
+            border-left: 4px solid #28a745;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .notification-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #28a745;
+        }
+        
+        .notification-icon {
+            margin-right: 10px;
+            font-size: 1.5rem;
+        }
+        
+        .notification-body {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .notification-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .notification-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .notification-btn.export {
+            background: #28a745;
+            color: white;
+        }
+        
+        .notification-btn.export:hover {
+            background: #218838;
+        }
+        
+        .notification-btn.dismiss {
+            background: #e9ecef;
+            color: #6c757d;
+        }
+        
+        .notification-btn.dismiss:hover {
+            background: #dee2e6;
+        }
+        
         .main-card {
             background: white;
             border-radius: 20px;
@@ -441,6 +521,7 @@
     
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="admin-portal.js"></script>
 </body>
 </html>

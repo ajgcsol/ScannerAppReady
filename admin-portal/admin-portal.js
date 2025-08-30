@@ -485,7 +485,9 @@ function displayEvents(events) {
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 10px;">
                         <button class="btn btn-primary" onclick="viewEventReport('${event.id}')" style="padding: 8px 16px; font-size: 0.9rem;">View Report</button>
-                        <button class="btn btn-secondary" onclick="exportEventData('${event.id}')" style="padding: 8px 16px; font-size: 0.9rem;">Export Data</button>
+                        <button class="btn btn-secondary" onclick="exportEventText('${event.id}')" style="padding: 8px 16px; font-size: 0.9rem;">Export Text</button>
+                        <button class="btn btn-secondary" onclick="exportEventXLSX('${event.id}')" style="padding: 8px 16px; font-size: 0.9rem;">Export XLSX</button>
+                        <button class="btn btn-secondary" onclick="exportEventErrors('${event.id}')" style="padding: 8px 16px; font-size: 0.9rem;">Export Errors</button>
                         <button class="btn" onclick="toggleEventStatus('${event.id}', ${!event.isActive})" style="padding: 8px 16px; font-size: 0.9rem; background: ${event.isActive ? '#fed7d7' : '#c6f6d5'}; color: ${event.isActive ? '#742a2a' : '#22543d'};">
                             ${event.isActive ? 'Deactivate' : 'Activate'}
                         </button>
@@ -641,9 +643,57 @@ async function viewEventReport(eventId) {
     }
 }
 
-async function exportEventData(eventId) {
+async function exportEventText(eventId) {
     try {
-        showMessage('Preparing export...', 'info');
+        showMessage('Preparing text export...', 'info');
+        
+        // Get event details
+        const eventDoc = await db.collection('events').doc(eventId).get();
+        if (!eventDoc.exists) {
+            showMessage('Event not found.', 'error');
+            return;
+        }
+        
+        const event = eventDoc.data();
+        
+        // Get scans for this event from scans collection
+        const scansSnapshot = await db.collection('scans')
+            .where('eventId', '==', eventId)
+            .get();
+        
+        const scans = scansSnapshot.docs.map(doc => doc.data());
+        
+        // Generate text delimited format
+        const validScans = scans.filter(scan => {
+            const cleanId = scan.code.replace(/\s/g, '');
+            return cleanId.length === 9;
+        });
+        
+        const textContent = validScans
+            .sort((a, b) => a.code.localeCompare(b.code))
+            .map(scan => {
+                const cleanId = scan.code.replace(/\s/g, '');
+                // Format: EventNumber + space + StudentID + "1"
+                return `${event.eventNumber} ${cleanId}1`;
+            })
+            .join('\n');
+        
+        const today = new Date();
+        const dateString = `${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}${today.getFullYear().toString().substr(2)}`;
+        const filename = `Event_${event.eventNumber}_${dateString}.txt`;
+        
+        downloadTextFile(textContent, filename);
+        showMessage(`Exported ${validScans.length} valid scans to ${filename}`, 'success');
+        
+    } catch (error) {
+        console.error('Error exporting text data:', error);
+        showMessage('Error exporting data: ' + error.message, 'error');
+    }
+}
+
+async function exportEventXLSX(eventId) {
+    try {
+        showMessage('Preparing XLSX export...', 'info');
         
         // Get event details
         const eventDoc = await db.collection('events').doc(eventId).get();
@@ -656,49 +706,96 @@ async function exportEventData(eventId) {
         
         // Get scans for this event
         const scansSnapshot = await db.collection('scans')
-            .where('listId', '==', eventId)
+            .where('eventId', '==', eventId)
             .get();
         
         const scans = scansSnapshot.docs.map(doc => doc.data());
         
-        // Generate text delimited format matching your Python script
-        const validScans = scans.filter(scan => {
-            const cleanId = scan.code.replace(/\s/g, '');
-            return cleanId.length === 9; // Only 9-character student IDs
+        // Create worksheet data
+        const worksheetData = [
+            ['Event', 'Student ID', 'First Name', 'Last Name', 'Email', 'Program', 'Year', 'Scanned At', 'Device', 'Status']
+        ];
+        
+        scans.forEach(scan => {
+            worksheetData.push([
+                event.name,
+                scan.code,
+                scan.firstName || '',
+                scan.lastName || '',
+                scan.email || '',
+                scan.program || '',
+                scan.year || '',
+                new Date(scan.timestamp).toLocaleString(),
+                scan.deviceId,
+                scan.verified ? 'Verified' : 'Unverified'
+            ]);
         });
         
-        const textContent = validScans
-            .sort((a, b) => a.code.localeCompare(b.code))
-            .map(scan => {
-                const cleanId = scan.code.replace(/\s/g, '');
-                const eventNum = event.eventNumber.toString().padStart(3, '0');
-                return `${eventNum} ${cleanId} 1`;
-            })
-            .join('\n');
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+        XLSX.utils.book_append_sheet(wb, ws, 'Event Report');
         
         // Download the file
         const today = new Date();
         const dateString = `${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}${today.getFullYear().toString().substr(2)}`;
-        const filename = `Event_${event.eventNumber}_${dateString}.txt`;
+        const filename = `Event_${event.eventNumber}_Report_${dateString}.xlsx`;
         
-        downloadTextFile(textContent, filename);
-        showMessage(`Exported ${validScans.length} valid scans to ${filename}`, 'success');
-        
-        // Generate error file if there are invalid IDs
-        const invalidScans = scans.filter(scan => {
-            const cleanId = scan.code.replace(/\s/g, '');
-            return cleanId.length !== 9;
-        });
-        
-        if (invalidScans.length > 0) {
-            const errorContent = invalidScans.map(scan => scan.code).join('\n');
-            downloadTextFile(errorContent, `Errors_${dateString}.txt`);
-            showMessage(`Also exported ${invalidScans.length} invalid IDs to error file.`, 'info');
-        }
+        XLSX.writeFile(wb, filename);
+        showMessage(`Exported ${scans.length} scans to ${filename}`, 'success');
         
     } catch (error) {
-        console.error('Error exporting event data:', error);
-        showMessage('Error exporting data: ' + error.message, 'error');
+        console.error('Error exporting XLSX:', error);
+        showMessage('Error exporting XLSX: ' + error.message, 'error');
+    }
+}
+
+async function exportEventErrors(eventId) {
+    try {
+        showMessage('Preparing error export...', 'info');
+        
+        // Get event details
+        const eventDoc = await db.collection('events').doc(eventId).get();
+        if (!eventDoc.exists) {
+            showMessage('Event not found.', 'error');
+            return;
+        }
+        
+        const event = eventDoc.data();
+        
+        // Get scans for this event
+        const scansSnapshot = await db.collection('scans')
+            .where('eventId', '==', eventId)
+            .get();
+        
+        const scans = scansSnapshot.docs.map(doc => doc.data());
+        
+        // Filter for invalid/error records
+        const invalidScans = scans.filter(scan => {
+            const cleanId = scan.code.replace(/\s/g, '');
+            return cleanId.length !== 9 || !scan.verified;
+        });
+        
+        if (invalidScans.length === 0) {
+            showMessage('No errors found for this event.', 'info');
+            return;
+        }
+        
+        // Generate error content
+        const errorContent = invalidScans.map(scan => {
+            return `${scan.code} - ${scan.verified ? 'Invalid ID Length' : 'Student Not Found'}`;
+        }).join('\n');
+        
+        const today = new Date();
+        const dateString = `${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}${today.getFullYear().toString().substr(2)}`;
+        const filename = `Event_${event.eventNumber}_Errors_${dateString}.txt`;
+        
+        downloadTextFile(errorContent, filename);
+        showMessage(`Exported ${invalidScans.length} error records to ${filename}`, 'success');
+        
+    } catch (error) {
+        console.error('Error exporting errors:', error);
+        showMessage('Error exporting errors: ' + error.message, 'error');
     }
 }
 

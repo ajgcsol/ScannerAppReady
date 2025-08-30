@@ -62,8 +62,8 @@ class TextDelimitedExportManager(private val context: Context) {
                 
                 sortedAttendees.forEach { attendee ->
                     val cleanedId = cleanStudentId(attendee.studentId)
-                    // Format: EventNumber(3 digits) + space + StudentID(9 chars) + space + "1"
-                    val line = "${event.eventNumber.toString().padStart(3, '0')} $cleanedId $ATTENDANCE_FLAG\n"
+                    // Format: EventNumber + space + StudentID + "1"
+                    val line = "${event.eventNumber} ${cleanedId}1\n"
                     writer.write(line)
                 }
             }

@@ -67,6 +67,8 @@ class EventRepository @Inject constructor() {
                                 ?: System.currentTimeMillis(),
                             location = data?.get("location") as? String ?: "",
                             isActive = data?.get("isActive") as? Boolean ?: true,
+                            isCompleted = data?.get("isCompleted") as? Boolean ?: false,
+                            completedAt = (data?.get("completedAt") as? com.google.firebase.Timestamp)?.toDate()?.time,
                             createdAt = (data?.get("createdAt") as? com.google.firebase.Timestamp)?.toDate()?.time 
                                 ?: System.currentTimeMillis()
                         )
@@ -130,6 +132,24 @@ class EventRepository @Inject constructor() {
     }
     
     /**
+     * Update an existing event
+     */
+    suspend fun updateEvent(event: Event): Boolean {
+        return try {
+            firestore.collection(EVENTS_COLLECTION)
+                .document(event.id)
+                .set(event)
+                .await()
+            
+            Log.d(TAG, "Event updated: ${event.name}")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating event", e)
+            false
+        }
+    }
+    
+    /**
      * Record an attendee scan for an event with sync and duplicate prevention
      */
     suspend fun recordAttendee(
@@ -187,7 +207,6 @@ class EventRepository @Inject constructor() {
     fun getEventAttendees(eventId: String): Flow<List<EventAttendee>> = callbackFlow {
         val listener = firestore.collection(ATTENDEES_COLLECTION)
             .whereEqualTo("eventId", eventId)
-            .orderBy("scannedAt")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "Error listening to attendees", error)
@@ -247,7 +266,6 @@ class EventRepository @Inject constructor() {
             val event = getEvent(eventId) ?: return null
             val attendeesSnapshot = firestore.collection(ATTENDEES_COLLECTION)
                 .whereEqualTo("eventId", eventId)
-                .orderBy("scannedAt")
                 .get()
                 .await()
             

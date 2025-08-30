@@ -38,6 +38,95 @@ class ExportManager(private val context: Context) {
     }
 
     /**
+     * Export and share CSV file
+     */
+    suspend fun exportAndShareCsv(scans: List<ScanRecord>, listId: String) {
+        Log.d(TAG, "Starting CSV export for ${scans.size} scans")
+        val file = exportToCsv(scans, listId)
+        file?.let {
+            Log.d(TAG, "CSV file created: ${it.absolutePath}")
+            val subject = "Scan Report - CSV Format"
+            val body = "Scan report containing ${scans.size} records.\nList: $listId\nGenerated: ${Date()}"
+            shareFile(it, subject, body)
+        } ?: run {
+            Log.e(TAG, "Failed to create CSV file")
+        }
+    }
+    
+    /**
+     * Export and share XLSX file
+     */
+    suspend fun exportAndShareXlsx(scans: List<ScanRecord>, listId: String) {
+        val file = exportToXlsx(scans, listId)
+        file?.let {
+            val subject = "Scan Report - Excel Format"
+            val body = "Scan report containing ${scans.size} records.\nList: $listId\nGenerated: ${Date()}"
+            shareFile(it, subject, body)
+        }
+    }
+    
+    /**
+     * Export and share text delimited file for event
+     */
+    suspend fun exportAndShareTextDelimited(event: Event, attendees: List<EventAttendee>) {
+        Log.d(TAG, "Starting text delimited export for event ${event.name} with ${attendees.size} attendees")
+        val file = exportEventToTextDelimited(event, attendees)
+        file?.let {
+            Log.d(TAG, "Text file created: ${it.absolutePath}")
+            val subject = "Event Export - ${event.name}"
+            val body = "Event attendee export for ${event.name}\nEvent #${event.eventNumber}\nFormat: Text Delimited\nGenerated: ${Date()}"
+            shareFile(it, subject, body)
+        } ?: run {
+            Log.e(TAG, "Failed to create text delimited file for event ${event.name}")
+        }
+    }
+    
+    /**
+     * Export and share text delimited file from local scan data (fallback)
+     */
+    suspend fun exportAndShareTextDelimitedFromScans(event: Event, scans: List<ScanRecord>) {
+        Log.d(TAG, "Creating text delimited export from ${scans.size} local scans for event ${event.name}")
+        
+        withContext(Dispatchers.IO) {
+            try {
+                val exportDir = File(context.getExternalFilesDir(null), "exports")
+                if (!exportDir.exists()) exportDir.mkdirs()
+                
+                val fileName = event.exportFilename
+                val file = File(exportDir, fileName)
+                
+                FileWriter(file).use { writer ->
+                    // Filter valid scans (9-character student IDs)
+                    val validScans = scans.filter { scan ->
+                        val cleanId = scan.code.replace(" ", "")
+                        cleanId.length == 9 && cleanId.all { it.isLetterOrDigit() }
+                    }
+                    
+                    // Sort by student ID
+                    val sortedScans = validScans
+                        .distinctBy { it.code } // Remove duplicates
+                        .sortedBy { it.code }
+                    
+                    sortedScans.forEach { scan ->
+                        val cleanedId = scan.code.replace(" ", "")
+                        // Format: EventNumber + space + StudentID + "1"
+                        val line = "${event.eventNumber} ${cleanedId}1\n"
+                        writer.write(line)
+                    }
+                }
+                
+                Log.d(TAG, "Text file created from local scans: ${file.absolutePath}")
+                val subject = "Event Export - ${event.name} (Local Data)"
+                val body = "Event export created from local scan data\nEvent: ${event.name}\nEvent #${event.eventNumber}\nFormat: Text Delimited\nGenerated: ${Date()}"
+                shareFile(file, subject, body)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create text file from local scans", e)
+            }
+        }
+    }
+    
+    /**
      * Export scan records to CSV format
      */
     suspend fun exportToCsv(scans: List<ScanRecord>, listId: String): File? {
@@ -153,6 +242,7 @@ class ExportManager(private val context: Context) {
                     type = when (file.extension.lowercase()) {
                         "csv" -> "text/csv"
                         "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        "txt" -> "text/plain"
                         else -> "application/octet-stream"
                     }
                     putExtra(Intent.EXTRA_STREAM, uri)
@@ -181,6 +271,43 @@ class ExportManager(private val context: Context) {
         }
     }
 
+    /**
+     * Create summary report with multiple attachments
+     */
+    suspend fun createSummaryReport(event: Event, attendees: List<EventAttendee>): File? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val timestamp = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+                val fileName = "PS${event.eventNumber}_SUMMARY_${timestamp}.xlsx"
+                val file = File(exportsDir, fileName)
+                
+                // Create CSV summary file
+                FileWriter(file).use { writer ->
+                    // Write header
+                    writer.append("StudentID,FirstName,LastName,Email,ScanTime\n")
+                    
+                    // Write attendee data
+                    attendees.forEach { attendee ->
+                        val student = attendee.student
+                        if (student != null) {
+                            writer.append("${student.studentId},")
+                            writer.append("${student.firstName},")
+                            writer.append("${student.lastName},")
+                            writer.append("${student.email},")
+                            writer.append("${attendee.formattedScanTime}\n")
+                        }
+                    }
+                }
+                
+                Log.d(TAG, "Summary report created: ${file.absolutePath}")
+                file
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create summary report", e)
+                null
+            }
+        }
+    }
+    
     /**
      * Export and email report
      */
@@ -223,11 +350,16 @@ class ExportManager(private val context: Context) {
     }
 
     /**
-     * Export and email event attendees in text delimited format
+     * Export and email event attendees in text delimited format with all attachments
      */
     suspend fun emailEventReport(event: Event, attendees: List<EventAttendee>) {
+        // Create all three required files
         val exportFile = exportEventToTextDelimited(event, attendees)
         val errorFile = textDelimitedExportManager.exportErrorFile(event, attendees)
+        val summaryFile = createSummaryReport(event, attendees)
+        
+        // Get error records from Firebase if available
+        // TODO: Fetch error records from Firebase and include in email
         
         exportFile?.let { textFile ->
             val timestamp = SimpleDateFormat("MMM dd, yyyy 'at' HH:mm", Locale.US).format(Date())

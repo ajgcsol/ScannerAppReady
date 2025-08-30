@@ -1,0 +1,27 @@
+This file should have no headers and each row should follow the below formatting with fix
+width formatting.
+
+In the row below for example the three inserted columns are;
+
+- The event ID and or event number (created in firebase) which in this instance is
+889 with the maximum column length being 4 digits.
+
+- The second column is the student ID
+which in this case is AB6124703 which will always be 9 digits.
+
+- The last column is a 1 and is only 1 digit. it is always a 1 and its purpose is
+basically a binary or boolean statement indicating to the student information system
+to add that record and always immediately trails the student ID number.
+
+***There are no headers included as you can see in the Event_889_111324.txt example, and that is intentional
+the import process does not accept headers for these files.***
+
+ Additionally, any errors or failures or duplicates need to be removed from the export file
+ we are sending because they are not compatible with import anyways.
+
+ I would also like another report (total of 3 attachments now if you are counting) to be sent
+ with the Student ID, First, Last, email, and a timestamp of the scan date and time. the file name can be something
+ like PS[Event Number]_SUMMARY_[Event Date].XLSX. Please make sure both of those functions are working.
+
+Referenced example row below.
+889 AB61247031

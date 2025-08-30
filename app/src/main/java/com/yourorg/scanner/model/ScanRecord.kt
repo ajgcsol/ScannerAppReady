@@ -7,14 +7,23 @@ package com.yourorg.scanner.model
 data class ScanRecord(
     val id: String = "",
     val code: String = "",
-    val symbology: String? = null,
+    val symbology: String = "QR_CODE",
     val timestamp: Long = 0L,
     val deviceId: String = "",
-    val userId: String? = null,
-    val listId: String = ""
+    val userId: String = "scanner-user",
+    val listId: String = "default-list",
+    // Extended fields for offline support
+    val synced: Boolean = false,
+    val verified: Boolean = false,
+    val firstName: String = "",
+    val lastName: String = "",
+    val email: String = "",
+    val program: String = "",
+    val year: String = "",
+    val eventId: String? = null
 ) {
     // No-argument constructor for Firebase
-    constructor() : this("", "", null, 0L, "", null, "")
+    constructor() : this("", "", "QR_CODE", 0L, "", "scanner-user", "default-list")
     
     /**
      * Convert to display-friendly format
