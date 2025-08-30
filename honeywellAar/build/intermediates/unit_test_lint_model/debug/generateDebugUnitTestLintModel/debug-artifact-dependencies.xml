@@ -1,0 +1,20 @@
+<dependencies>
+  <compile
+      roots="__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar:unspecified@jar,:@@:honeywellAar::debug">
+    <dependency
+        name="__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar:unspecified@jar"
+        simpleName="__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar"/>
+    <dependency
+        name=":@@:honeywellAar::debug"
+        simpleName="ScannerApp:honeywellAar"/>
+  </compile>
+  <package
+      roots=":@@:honeywellAar::debug,__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar:unspecified@jar">
+    <dependency
+        name=":@@:honeywellAar::debug"
+        simpleName="ScannerApp:honeywellAar"/>
+    <dependency
+        name="__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar:unspecified@jar"
+        simpleName="__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar"/>
+  </package>
+</dependencies>

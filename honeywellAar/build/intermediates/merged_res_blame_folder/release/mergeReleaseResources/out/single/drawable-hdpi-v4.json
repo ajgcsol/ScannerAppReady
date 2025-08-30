@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.yourorg.honeywellwrapper.honeywellAar-release-4:/drawable-hdpi-v4/barcode_example_icon.png",
+        "source": "com.yourorg.honeywellwrapper.honeywellAar-jetified-DataCollection-0:/drawable-hdpi-v4/barcode_example_icon.png"
+    },
+    {
+        "merged": "com.yourorg.honeywellwrapper.honeywellAar-release-4:/drawable-hdpi-v4/ic_launcher.png",
+        "source": "com.yourorg.honeywellwrapper.honeywellAar-jetified-DataCollection-0:/drawable-hdpi-v4/ic_launcher.png"
+    }
+]

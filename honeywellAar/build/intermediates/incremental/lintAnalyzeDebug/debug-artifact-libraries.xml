@@ -1,0 +1,15 @@
+<libraries>
+  <library
+      name="__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar:unspecified@jar"
+      jars="C:\Users\agregware\.gradle\caches\8.13\transforms\06d50db93986b2c4836604241e32a641\transformed\jetified-DataCollection\jars\classes.jar"
+      resolved="__local_aars__:C:\android\ScannerAppReady\honeywellAar\libs\DataCollection.aar:unspecified"
+      folder="C:\Users\agregware\.gradle\caches\8.13\transforms\06d50db93986b2c4836604241e32a641\transformed\jetified-DataCollection"
+      manifest="AndroidManifest.xml"
+      resFolder="res"
+      assetsFolder="assets"
+      lintJar="lint.jar"
+      publicResources="public.txt"
+      symbolFile="R.txt"
+      externalAnnotations="annotations.zip"
+      proguardRules="proguard.txt"/>
+</libraries>

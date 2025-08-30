@@ -1,0 +1,3 @@
+-keep class org.apache.poi.** { *; }
+-dontwarn org.apache.xmlbeans.**
+-dontwarn org.openxmlformats.**

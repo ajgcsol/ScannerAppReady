@@ -1,0 +1,34 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.yourorg.honeywellwrapper.honeywellAar-mergeReleaseResources-2:/values/values.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\agregware\\.gradle\\caches\\8.13\\transforms\\06d50db93986b2c4836604241e32a641\\transformed\\jetified-DataCollection\\res\\values\\values.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "51",
+                        "endOffsets": "102"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "com.yourorg.honeywellwrapper.honeywellAar-release-4:/values/values.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\agregware\\.gradle\\caches\\8.13\\transforms\\06d50db93986b2c4836604241e32a641\\transformed\\jetified-DataCollection\\res\\values\\values.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "51",
+                        "endOffsets": "102"
+                    }
+                }
+            ]
+        }
+    ]
+}

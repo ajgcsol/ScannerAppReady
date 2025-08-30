@@ -1,0 +1,8 @@
+com.yourorg.honeywellwrapper.honeywellAar-jetified-DataCollection-0 C:\Users\agregware\.gradle\caches\8.13\transforms\06d50db93986b2c4836604241e32a641\transformed\jetified-DataCollection\res
+com.yourorg.honeywellwrapper.honeywellAar-pngs-1 C:\android\ScannerAppReady\honeywellAar\build\generated\res\pngs\release
+com.yourorg.honeywellwrapper.honeywellAar-resValues-2 C:\android\ScannerAppReady\honeywellAar\build\generated\res\resValues\release
+com.yourorg.honeywellwrapper.honeywellAar-mergeReleaseResources-3 C:\android\ScannerAppReady\honeywellAar\build\intermediates\incremental\release\mergeReleaseResources\merged.dir
+com.yourorg.honeywellwrapper.honeywellAar-mergeReleaseResources-4 C:\android\ScannerAppReady\honeywellAar\build\intermediates\incremental\release\mergeReleaseResources\stripped.dir
+com.yourorg.honeywellwrapper.honeywellAar-release-5 C:\android\ScannerAppReady\honeywellAar\build\intermediates\merged_res\release\mergeReleaseResources
+com.yourorg.honeywellwrapper.honeywellAar-main-6 C:\android\ScannerAppReady\honeywellAar\src\main\res
+com.yourorg.honeywellwrapper.honeywellAar-release-7 C:\android\ScannerAppReady\honeywellAar\src\release\res
