@@ -53,7 +53,14 @@ data class ScannerUiState(
     val showNewEventDialog: Boolean = false,
     // Duplicate scan detection
     val showDuplicateDialog: Boolean = false,
-    val duplicateStudent: Student? = null
+    val duplicateStudent: Student? = null,
+    // Event statistics
+    val uniqueStudentCount: Int = 0,
+    val duplicateScanCount: Int = 0,
+    val errorCount: Int = 0,
+    val forgotIdCount: Int = 0,
+    // No event selected dialog
+    val showNoEventDialog: Boolean = false
 )
 
 class ScannerViewModel(
@@ -133,11 +140,18 @@ class ScannerViewModel(
                     entity.toScanRecord()
                 }
                 
+                // Calculate statistics
+                val statistics = calculateEventStatistics(scanRecords)
+                
                 updateState { 
                     it.copy(
                         scans = scanRecords,
                         lastScan = scanRecords.firstOrNull(),
-                        scanCount = scanRecords.size
+                        scanCount = scanRecords.size,
+                        uniqueStudentCount = statistics.uniqueStudents,
+                        duplicateScanCount = statistics.duplicates,
+                        errorCount = statistics.errors,
+                        forgotIdCount = statistics.forgotIds
                     ) 
                 }
             } catch (e: Exception) {
@@ -146,6 +160,30 @@ class ScannerViewModel(
             }
         }
     }
+    
+    /**
+     * Calculate event statistics from scan records
+     */
+    private fun calculateEventStatistics(scans: List<ScanRecord>): EventStatistics {
+        val uniqueStudents = scans.filter { it.verified }.distinctBy { it.code }.size
+        val duplicates = scans.size - scans.distinctBy { it.code }.size
+        val errors = scans.count { !it.verified && it.email.isEmpty() }
+        val forgotIds = scans.count { it.symbology == "MANUAL_CHECKIN" }
+        
+        return EventStatistics(
+            uniqueStudents = uniqueStudents,
+            duplicates = duplicates,
+            errors = errors,
+            forgotIds = forgotIds
+        )
+    }
+    
+    data class EventStatistics(
+        val uniqueStudents: Int,
+        val duplicates: Int,
+        val errors: Int,
+        val forgotIds: Int
+    )
 
     private fun observeFirestoreChanges() {
         viewModelScope.launch {
@@ -297,6 +335,11 @@ class ScannerViewModel(
     }
 
     fun triggerScan() {
+        if (_uiState.value.currentEvent == null) {
+            updateState { it.copy(showNoEventDialog = true) }
+            return
+        }
+        
         // Show camera preview for scanning
         updateState { it.copy(showCameraPreview = true) }
     }
@@ -326,6 +369,11 @@ class ScannerViewModel(
 
     // Forgot ID functionality
     fun showForgotIdDialog() {
+        if (_uiState.value.currentEvent == null) {
+            updateState { it.copy(showNoEventDialog = true) }
+            return
+        }
+        
         updateState { it.copy(showForgotIdDialog = true) }
     }
     
@@ -337,6 +385,10 @@ class ScannerViewModel(
                 isSearchingStudents = false
             ) 
         }
+    }
+    
+    fun dismissNoEventDialog() {
+        updateState { it.copy(showNoEventDialog = false) }
     }
     
     fun searchStudents(query: String) {
@@ -421,18 +473,19 @@ class ScannerViewModel(
         viewModelScope.launch {
             try {
                 eventRepository.getAllEvents().collect { allEvents ->
-                    // Filter to only show incomplete events (not completed)
-                    val incompleteEvents = allEvents.filter { !it.isCompleted }
+                    // Show all events (both active and completed) in the available list
+                    // But prioritize active events for current selection
+                    val activeEvents = allEvents.filter { !it.isCompleted }
                     
                     // Try to restore previously selected event
                     val savedEventId = sharedPrefs.getString(KEY_CURRENT_EVENT_ID, null)
-                    val currentEvent = incompleteEvents.find { it.id == savedEventId }
-                        ?: incompleteEvents.find { it.isActive } 
-                        ?: incompleteEvents.firstOrNull()
+                    val currentEvent = allEvents.find { it.id == savedEventId }
+                        ?: activeEvents.find { it.isActive } 
+                        ?: activeEvents.firstOrNull()
                     
                     updateState { 
                         it.copy(
-                            availableEvents = incompleteEvents,
+                            availableEvents = allEvents, // Show all events in selector
                             currentEvent = currentEvent
                         ) 
                     }

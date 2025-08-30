@@ -29,6 +29,14 @@ fun EventSelectorDialog(
     onReopenEvent: (Event) -> Unit = {},
     onDismiss: () -> Unit
 ) {
+    var showCompletedEvents by remember { mutableStateOf(false) }
+    
+    // Filter events based on toggle
+    val filteredEvents = if (showCompletedEvents) {
+        events.filter { it.isCompleted }
+    } else {
+        events.filter { !it.isCompleted }
+    }
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
@@ -67,8 +75,38 @@ fun EventSelectorDialog(
                     }
                 }
                 
+                // Toggle Switch
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (showCompletedEvents) "Completed Events" else "Active Events",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Show Completed",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = showCompletedEvents,
+                            onCheckedChange = { showCompletedEvents = it }
+                        )
+                    }
+                }
+                
                 // Events List
-                if (events.isEmpty()) {
+                if (filteredEvents.isEmpty()) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -84,13 +122,16 @@ fun EventSelectorDialog(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "No Events Found",
+                                text = if (showCompletedEvents) "No Completed Events" else "No Active Events",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Create your first event to get started",
+                                text = if (showCompletedEvents) 
+                                    "Complete an event to see it here" 
+                                else 
+                                    "Create your first event to get started",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -103,7 +144,7 @@ fun EventSelectorDialog(
                             .heightIn(max = 300.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(events) { event ->
+                        items(filteredEvents) { event ->
                             EventCard(
                                 event = event,
                                 isSelected = currentEvent?.id == event.id,

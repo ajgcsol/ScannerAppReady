@@ -30,11 +30,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import com.yourorg.scanner.model.ScanRecord
+import java.text.SimpleDateFormat
+import java.util.*
 import com.yourorg.scanner.ui.theme.ScannerAppTheme
 import com.yourorg.scanner.ui.StudentVerificationDialog
 import com.yourorg.scanner.ui.DuplicateScanDialog
@@ -43,8 +46,6 @@ import com.yourorg.scanner.ui.EventSelectorDialog
 import com.yourorg.scanner.ui.NewEventDialog
 import com.yourorg.scanner.ui.CameraPreviewScreen
 import com.yourorg.scanner.model.Event
-import java.text.SimpleDateFormat
-import java.util.*
 
 class MainActivity : ComponentActivity() {
 
@@ -72,6 +73,8 @@ fun ScannerApp(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var isLoading by remember { mutableStateOf(true) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var showAppInfoDialog by remember { mutableStateOf(false) }
     
     // Show loading animation for 2 seconds on initial load
     LaunchedEffect(Unit) {
@@ -94,54 +97,101 @@ fun ScannerApp(
                         Icon(
                             Icons.Default.FactCheck,
                             contentDescription = "App Logo",
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "EventCheck Pro", 
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            Text(
-                                "Professional Event Management",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
-                        }
+                        Text(
+                            "Charleston Law Event Scanner", 
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
+                actions = {
+                    // Information Icon
+                    IconButton(
+                        onClick = { showAppInfoDialog = true }
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "App Information",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    
+                    // Support Icon  
+                    IconButton(
+                        onClick = { /* TODO: Add support functionality */ }
+                    ) {
+                        Icon(
+                            Icons.Default.Support,
+                            contentDescription = "Support",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { viewModel.triggerScan() },
-                icon = {
+            // Side by side buttons matching screenshot layout
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                // Forgot ID Button (Left) - same dimensions as SCAN
+                if (selectedTabIndex == 0) {  // Only show on Home tab
+                    ExtendedFloatingActionButton(
+                        onClick = { viewModel.showForgotIdDialog() },
+                        containerColor = Color(0xFF4CAF50),  // Green color
+                        contentColor = Color.White,
+                        modifier = Modifier.height(56.dp)  // Same height as scan button
+                    ) {
+                        Icon(
+                            Icons.Default.PersonSearch,
+                            contentDescription = "Forgot ID",
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Forgot ID?")
+                    }
+                }
+                
+                // Main Scan Button (Right - Blue) - same dimensions as Forgot ID
+                ExtendedFloatingActionButton(
+                    onClick = { viewModel.triggerScan() },
+                    containerColor = Color(0xFF2196F3),  // Blue color
+                    contentColor = Color.White,
+                    modifier = Modifier.height(56.dp)  // Same height as forgot ID button
+                ) {
                     if (uiState.isScanning) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            strokeWidth = 3.dp
+                            strokeWidth = 3.dp,
+                            color = Color.White
                         )
                     } else {
                         Icon(
                             Icons.Default.QrCodeScanner, 
-                            contentDescription = "Scan"
+                            contentDescription = "Scan",
+                            modifier = Modifier.size(24.dp)  // Same icon size as Forgot ID
                         )
                     }
-                },
-                text = { 
-                    Text(if (uiState.isScanning) "Scanning..." else "Scan") 
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (uiState.isScanning) "Scanning..." else "SCAN",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            )
+            }
         }
     ) { paddingValues ->
-        var selectedTabIndex by remember { mutableIntStateOf(0) }
-        
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -150,7 +200,7 @@ fun ScannerApp(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
             
-            // Event Selection Header (above tabs)
+            // Event Selection Card (simplified, non-duplicate header)
             EventHeaderCard(
                 currentEvent = uiState.currentEvent,
                 onSelectEvent = { viewModel.showEventSelector() }
@@ -166,12 +216,17 @@ fun ScannerApp(
                 Tab(
                     selected = selectedTabIndex == 0,
                     onClick = { selectedTabIndex = 0 },
-                    text = { Text("Event Home") }
+                    text = { Text("Home") }
                 )
                 Tab(
                     selected = selectedTabIndex == 1,
                     onClick = { selectedTabIndex = 1 },
-                    text = { Text("Recent Scans") }
+                    text = { Text("Scans") }
+                )
+                Tab(
+                    selected = selectedTabIndex == 2,
+                    onClick = { selectedTabIndex = 2 },
+                    text = { Text("Summary") }
                 )
             }
             
@@ -244,47 +299,6 @@ fun ScannerApp(
                             Spacer(modifier = Modifier.height(16.dp))
                         }
                         
-                        // Forgot My ID Button
-                        OutlinedButton(
-                            onClick = { viewModel.showForgotIdDialog() },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(Icons.Default.PersonSearch, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Forgot My ID? Search by Name")
-                        }
-                        
-                        // Complete Event Button - only show if event is active
-                        uiState.currentEvent?.let { event ->
-                            if (event.isActive && !event.isCompleted) {
-                                Spacer(modifier = Modifier.height(24.dp))
-                                
-                                Button(
-                                    onClick = { viewModel.completeCurrentEvent() },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.tertiary
-                                    )
-                                ) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Complete Event Scanning")
-                                }
-                                
-                                Text(
-                                    "This will mark the event as complete and notify administrators",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8.dp)
-                                )
-                            }
-                        }
                     }
                 }
                 1 -> {
@@ -296,6 +310,13 @@ fun ScannerApp(
                             ScanItem(scan = scan)
                         }
                     }
+                }
+                2 -> {
+                    // Event Summary Tab Content
+                    EventSummaryTab(
+                        uiState = uiState,
+                        viewModel = viewModel
+                    )
                 }
             }
         }
@@ -333,6 +354,44 @@ fun ScannerApp(
         )
     }
     
+    // No Event Selected Dialog
+    if (uiState.showNoEventDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissNoEventDialog() },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = "Warning",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("No Event Selected")
+                }
+            },
+            text = {
+                Text("Please select or create an event before scanning or using the Forgot ID feature.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { 
+                        viewModel.dismissNoEventDialog()
+                        viewModel.showEventSelector()
+                    }
+                ) {
+                    Text("Select Event")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissNoEventDialog() }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+    
     // Event Selector Dialog
     if (uiState.showEventSelector) {
         EventSelectorDialog(
@@ -362,6 +421,61 @@ fun ScannerApp(
             },
             onBackPressed = { viewModel.hideCameraPreview() },
             modifier = Modifier.fillMaxSize()
+        )
+    }
+    
+    // App Information Dialog
+    if (showAppInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showAppInfoDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Information",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("About InSession")
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        "Charleston Law Event Scanner",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text("Author: Andrew Gregware")
+                    Text("Co-Author: Claude Code")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text("Created: August 30, 2025")
+                    Text("Last Updated: August 30, 2025")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        "GitHub Repository:",
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        "github.com/andrewgregware/scanner-app",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showAppInfoDialog = false }
+                ) {
+                    Text("Close")
+                }
+            }
         )
     }
     }
@@ -452,7 +566,7 @@ fun LoadingSplashScreen() {
             Spacer(modifier = Modifier.height(32.dp))
             
             Text(
-                "EventCheck Pro",
+                "InSession",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -461,7 +575,7 @@ fun LoadingSplashScreen() {
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                "Professional Event Management",
+                "Charleston Law Event Scanner",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color.White.copy(alpha = 0.8f)
             )
@@ -798,6 +912,298 @@ fun ScanItem(scan: ScanRecord) {
 
 
 @Composable
+fun EventSummaryTab(
+    uiState: ScannerUiState,
+    viewModel: ScannerViewModel
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+    ) {
+        uiState.currentEvent?.let { event ->
+            // Event Duration Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = "Duration",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Event Duration",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    val startTime = event.createdAt
+                    val currentTime = System.currentTimeMillis()
+                    val duration = currentTime - startTime
+                    val hours = duration / (1000 * 60 * 60)
+                    val minutes = (duration / (1000 * 60)) % 60
+                    
+                    Text(
+                        "Active for: ${hours}h ${minutes}m",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    
+                    Text(
+                        "Started: ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(startTime))}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Statistics Grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Total Scans
+                StatisticCard(
+                    title = "Total Scans",
+                    value = uiState.scanCount.toString(),
+                    icon = Icons.Default.QrCodeScanner,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // Unique Students
+                StatisticCard(
+                    title = "Unique",
+                    value = uiState.uniqueStudentCount.toString(),
+                    icon = Icons.Default.Person,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Duplicates
+                StatisticCard(
+                    title = "Duplicates",
+                    value = uiState.duplicateScanCount.toString(),
+                    icon = Icons.Default.ContentCopy,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // Errors
+                StatisticCard(
+                    title = "Errors",
+                    value = uiState.errorCount.toString(),
+                    icon = Icons.Default.Warning,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Forgot ID Count Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.PersonSearch,
+                        contentDescription = "Forgot ID",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            "Manual Check-ins (Forgot ID)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            "${uiState.forgotIdCount} students",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Event Actions
+            if (event.isActive && !event.isCompleted) {
+                Button(
+                    onClick = { viewModel.completeCurrentEvent() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Complete Event")
+                }
+                
+                Text(
+                    "Mark this event as complete and notify administrators for export",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
+            } else if (event.isCompleted) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = "Completed",
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Event Completed",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        event.completedAt?.let { completedAt ->
+                            Text(
+                                "Completed: ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(completedAt))}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        OutlinedButton(
+                            onClick = { viewModel.reopenEvent(event) },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Reopen Event")
+                        }
+                    }
+                }
+            }
+        } ?: run {
+            // No event selected
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Default.Event,
+                        contentDescription = "No Event",
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "No Event Selected",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Select an event to view summary",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatisticCard(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                contentDescription = title,
+                tint = color,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+        }
+    }
+}
+
+@Composable
 fun EventHeaderCard(
     currentEvent: com.yourorg.scanner.model.Event?,
     onSelectEvent: () -> Unit
@@ -805,9 +1211,13 @@ fun EventHeaderCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
+            containerColor = if (currentEvent == null) 
+                MaterialTheme.colorScheme.errorContainer 
+            else 
+                MaterialTheme.colorScheme.surfaceVariant
         ),
-        onClick = onSelectEvent
+        onClick = onSelectEvent,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
@@ -823,14 +1233,20 @@ fun EventHeaderCard(
                     Icon(
                         Icons.Default.Event,
                         contentDescription = "Event",
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        tint = if (currentEvent == null) 
+                            MaterialTheme.colorScheme.onErrorContainer 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Current Event",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = if (currentEvent == null) 
+                            MaterialTheme.colorScheme.onErrorContainer 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
@@ -841,7 +1257,7 @@ fun EventHeaderCard(
                         text = "Event #${currentEvent.eventNumber}: ${currentEvent.name}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
@@ -850,7 +1266,7 @@ fun EventHeaderCard(
                         Text(
                             text = currentEvent.description,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
@@ -859,12 +1275,13 @@ fun EventHeaderCard(
                     Text(
                         text = "No Event Selected",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "Tap to select or create an event",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
                     )
                 }
             }
@@ -872,7 +1289,10 @@ fun EventHeaderCard(
             Icon(
                 Icons.Default.ChevronRight,
                 contentDescription = "Select Event",
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                tint = if (currentEvent == null) 
+                    MaterialTheme.colorScheme.onErrorContainer 
+                else 
+                    MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
         }
