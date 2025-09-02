@@ -237,7 +237,7 @@ function displayStudents(students) {
     if (students.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" style="text-align: center; padding: 40px; color: #718096;">
+                <td colspan="5" style="text-align: center; padding: 40px; color: #718096;">
                     No students found. Upload CSV data to get started.
                 </td>
             </tr>
@@ -251,13 +251,20 @@ function displayStudents(students) {
             <td>${student.firstName || ''}</td>
             <td>${student.lastName || ''}</td>
             <td>${student.email || ''}</td>
-            <td>${student.program || ''}</td>
-            <td>${student.year || ''}</td>
             <td>
-                <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.9rem;" 
-                        onclick="editStudent('${student.id}')">Edit</button>
-                <button class="btn" style="padding: 5px 10px; font-size: 0.9rem; background: #fed7d7; color: #742a2a;" 
-                        onclick="deleteStudent('${student.id}')">Delete</button>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <select id="student-action-${student.id}" class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.9rem; cursor: pointer;">
+                        <option value="">Select Action...</option>
+                        <option value="view">View Details</option>
+                        <option value="edit">Edit Student</option>
+                        <option value="export">Export Data</option>
+                        <option value="delete">Delete Student</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="executeStudentAction('${student.id}', '${student.studentId}', '${(student.firstName || '').replace(/'/g, "\\'")}', '${(student.lastName || '').replace(/'/g, "\\'")}')" 
+                            style="padding: 6px 12px; font-size: 0.9rem;">
+                        Go
+                    </button>
+                </div>
             </td>
         </tr>
     `).join('');
@@ -1575,15 +1582,159 @@ async function addNewStudent() {
     }
 }
 
-// Placeholder functions for future implementation
+// Student Action Functions
+function executeStudentAction(studentId, studentNumber, firstName, lastName) {
+    const selectElement = document.getElementById(`student-action-${studentId}`);
+    const action = selectElement.value;
+    
+    if (!action) {
+        showMessage('Please select an action first.', 'error');
+        return;
+    }
+    
+    switch(action) {
+        case 'view':
+            viewStudentDetails(studentId);
+            break;
+        case 'edit':
+            editStudent(studentId);
+            break;
+        case 'export':
+            exportStudentData(studentId, studentNumber, firstName, lastName);
+            break;
+        case 'delete':
+            deleteStudent(studentId, studentNumber, firstName, lastName);
+            break;
+        default:
+            showMessage('Invalid action selected.', 'error');
+    }
+    
+    // Reset the dropdown
+    selectElement.value = '';
+}
+
+async function viewStudentDetails(studentId) {
+    try {
+        const studentDoc = await db.collection('students').doc(studentId).get();
+        
+        if (!studentDoc.exists) {
+            showMessage('Student not found.', 'error');
+            return;
+        }
+        
+        const student = studentDoc.data();
+        
+        const content = `
+            <div class="info-section">
+                <h3>Student Information</h3>
+                <p><strong>Student ID:</strong> ${student.studentId || 'N/A'}</p>
+                <p><strong>Name:</strong> ${student.firstName || ''} ${student.lastName || ''}</p>
+                <p><strong>Email:</strong> ${student.email || 'N/A'}</p>
+                <p><strong>Program:</strong> ${student.program || 'Not specified'}</p>
+                <p><strong>Year:</strong> ${student.year || 'Not specified'}</p>
+                <p><strong>Status:</strong> ${student.active ? 'Active' : 'Inactive'}</p>
+                <p><strong>Added:</strong> ${student.uploadedAt ? new Date(student.uploadedAt.seconds * 1000).toLocaleString() : 'Unknown'}</p>
+                <p><strong>Added Method:</strong> ${student.addedManually ? 'Manual Entry' : 'CSV Upload'}</p>
+            </div>
+            
+            <div class="info-section">
+                <h3>Scan History</h3>
+                <p style="color: #6b7280;">Loading scan history...</p>
+            </div>
+        `;
+        
+        showModal(`Student Details: ${student.firstName} ${student.lastName}`, content);
+        
+        // Load scan history
+        loadStudentScanHistory(studentId);
+        
+    } catch (error) {
+        console.error('Error viewing student details:', error);
+        showMessage('Error loading student details: ' + error.message, 'error');
+    }
+}
+
+async function loadStudentScanHistory(studentId) {
+    try {
+        const scansSnapshot = await db.collection('scans')
+            .where('code', '==', studentId)
+            .limit(20)
+            .get();
+        
+        const modalBody = document.getElementById('modal-body');
+        const scanSection = modalBody.querySelector('.info-section:last-child');
+        
+        if (scansSnapshot.empty) {
+            scanSection.innerHTML = '<h3>Scan History</h3><p style="color: #6b7280;">No scan history found for this student.</p>';
+        } else {
+            let scanHTML = '<h3>Scan History</h3><div style="max-height: 200px; overflow-y: auto;">';
+            
+            scansSnapshot.docs.forEach(doc => {
+                const scan = doc.data();
+                const timestamp = new Date(scan.timestamp);
+                scanHTML += `
+                    <div style="padding: 8px; border-bottom: 1px solid #e5e7eb;">
+                        <strong>Event:</strong> ${scan.listId || 'Unknown'}<br>
+                        <strong>Time:</strong> ${timestamp.toLocaleString()}<br>
+                        <strong>Status:</strong> ${scan.verified ? '✅ Verified' : '❌ Not Verified'}
+                    </div>
+                `;
+            });
+            
+            scanHTML += '</div>';
+            scanSection.innerHTML = scanHTML;
+        }
+        
+    } catch (error) {
+        console.error('Error loading scan history:', error);
+    }
+}
+
 function editStudent(studentId) {
     showMessage('Edit functionality coming soon!', 'info');
 }
 
-function deleteStudent(studentId) {
-    if (confirm('Are you sure you want to delete this student record?')) {
-        // Implementation for deleting student
-        showMessage('Delete functionality coming soon!', 'info');
+function exportStudentData(studentId, studentNumber, firstName, lastName) {
+    const csvContent = `StudentID,FirstName,LastName,Email\n${studentNumber},${firstName},${lastName},`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `student_${studentNumber}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    
+    showMessage(`Exported data for ${firstName} ${lastName}`, 'success');
+}
+
+async function deleteStudent(studentId, studentNumber, firstName, lastName) {
+    const confirmed = confirm(
+        `Are you sure you want to delete this student?\n\n` +
+        `Student ID: ${studentNumber}\n` +
+        `Name: ${firstName} ${lastName}\n\n` +
+        `This action cannot be undone!`
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    try {
+        await db.collection('students').doc(studentId).delete();
+        
+        showMessage(`Successfully deleted student ${firstName} ${lastName} (ID: ${studentNumber})`, 'success');
+        
+        // Reload student data
+        loadStudentData();
+        
+    } catch (error) {
+        console.error('Error deleting student:', error);
+        showMessage('Error deleting student: ' + error.message, 'error');
     }
 }
 
@@ -2073,6 +2224,204 @@ async function exportArchive(archiveId) {
     }
 }
 
+// Notification System
+let notifications = [];
+let completedEvents = [];
+
+function checkForCompletedEvents() {
+    // Check localStorage for completed events
+    const storedEvents = localStorage.getItem('completedEvents');
+    if (storedEvents) {
+        completedEvents = JSON.parse(storedEvents);
+        updateNotificationBadge();
+    }
+}
+
+function addEventCompletionNotification(eventName, eventNumber) {
+    const notification = {
+        id: Date.now(),
+        type: 'event_complete',
+        title: 'Event Completed',
+        message: `Event #${eventNumber}: ${eventName} has been marked as complete.`,
+        timestamp: new Date().toISOString(),
+        read: false
+    };
+    
+    notifications.unshift(notification);
+    completedEvents.push(notification);
+    localStorage.setItem('completedEvents', JSON.stringify(completedEvents));
+    updateNotificationBadge();
+    
+    // Show toast notification
+    showToastNotification(`✅ Event "${eventName}" completed!`);
+}
+
+function updateNotificationBadge() {
+    const unreadCount = notifications.filter(n => !n.read).length;
+    const badge = document.getElementById('notification-count');
+    
+    if (unreadCount > 0) {
+        badge.textContent = unreadCount;
+        badge.style.display = 'inline-block';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+function showToastNotification(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.innerHTML = `
+        <div style="position: fixed; bottom: 20px; right: 20px; background: #10b981; color: white; padding: 16px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 3000; animation: slideInUp 0.3s ease;">
+            ${message}
+        </div>
+    `;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+// Modal Functions
+function showModal(title, content) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = content;
+    document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('modal-overlay').style.display = 'none';
+}
+
+function showNotifications() {
+    let content = '<div>';
+    
+    if (notifications.length === 0) {
+        content += '<p style="text-align: center; color: #6b7280; padding: 32px;">No notifications yet</p>';
+    } else {
+        notifications.forEach(notif => {
+            const date = new Date(notif.timestamp);
+            content += `
+                <div class="help-item" style="${!notif.read ? 'background: #eff6ff; border-color: #3b82f6;' : ''}">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div>
+                            <h4>${notif.title}</h4>
+                            <p>${notif.message}</p>
+                            <small style="color: #9ca3af;">${date.toLocaleString()}</small>
+                        </div>
+                        ${!notif.read ? '<span style="color: #3b82f6; font-size: 0.75rem; font-weight: 600;">NEW</span>' : ''}
+                    </div>
+                </div>
+            `;
+            notif.read = true;
+        });
+    }
+    
+    content += '</div>';
+    
+    showModal('Notifications', content);
+    updateNotificationBadge();
+}
+
+function showInfo() {
+    const content = `
+        <div class="info-section">
+            <h3>System Information</h3>
+            <p><strong>Created By:</strong> Andrew Gregware</p>
+            <p><strong>Creation Date:</strong> August 29, 2025</p>
+            <p><strong>Last Updated:</strong> ${new Date().toLocaleDateString()}</p>
+            <p><strong>Version:</strong> 2.0.0</p>
+            <p><strong>Database:</strong> Firebase Firestore</p>
+        </div>
+        
+        <div class="info-section">
+            <h3>Features</h3>
+            <p>• Student data management with CSV upload</p>
+            <p>• Event creation and attendance tracking</p>
+            <p>• Archive system for data backup/restore</p>
+            <p>• Real-time analytics and reporting</p>
+            <p>• QR code scanning integration</p>
+        </div>
+        
+        <div class="info-section">
+            <h3>Data Limits</h3>
+            <p>• Maximum CSV size: 10MB</p>
+            <p>• Student ID format: 9 digits</p>
+            <p>• Archive retention: Unlimited</p>
+        </div>
+    `;
+    
+    showModal('System Information', content);
+}
+
+function showHelp() {
+    const content = `
+        <div class="help-item">
+            <h4>How to Upload Students</h4>
+            <p>1. Click "Download CSV Template" to get the correct format</p>
+            <p>2. Fill in StudentID, FirstName, LastName, and Email</p>
+            <p>3. Drag and drop or click to upload the CSV file</p>
+            <p>4. Click "Upload to Database" to import students</p>
+        </div>
+        
+        <div class="help-item">
+            <h4>Creating Events</h4>
+            <p>1. Go to the Events tab</p>
+            <p>2. Click "Create New Event"</p>
+            <p>3. Enter a unique event number and name</p>
+            <p>4. Events are automatically set to active status</p>
+        </div>
+        
+        <div class="help-item">
+            <h4>Managing Archives</h4>
+            <p>• Create Archive: Backs up all current student data</p>
+            <p>• Restore Archive: Replaces current data with archived version</p>
+            <p>• Archives are timestamped and can be exported as CSV</p>
+        </div>
+        
+        <div class="help-item">
+            <h4>Keyboard Shortcuts</h4>
+            <p><strong>Ctrl + S:</strong> Save current form</p>
+            <p><strong>Ctrl + F:</strong> Focus search box</p>
+            <p><strong>Esc:</strong> Close modal windows</p>
+        </div>
+        
+        <div class="help-item">
+            <h4>Need More Help?</h4>
+            <p>Contact support at: agregware@charlestonlaw.edu</p>
+            <p>Documentation: docs.insession.com</p>
+        </div>
+    `;
+    
+    showModal('Help & Documentation', content);
+}
+
+// Add keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeModal();
+        closeScanDetails();
+        closeArchivePreview();
+    }
+});
+
+// Add animation styles
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+    @keyframes slideInUp {
+        from {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+`;
+document.head.appendChild(styleSheet);
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
     // Load initial analytics
@@ -2081,6 +2430,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load archives list and history when on upload tab
     loadArchivesList();
     loadArchiveHistory();
+    
+    // Check for completed events
+    checkForCompletedEvents();
     
     // Set up drag and drop for the entire upload area
     const uploadArea = document.querySelector('.upload-area');
