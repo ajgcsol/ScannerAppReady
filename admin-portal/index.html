@@ -342,11 +342,6 @@
             margin-right: 10px;
         }
         
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
         .hidden {
             display: none;
         }
@@ -363,7 +358,7 @@
             <div class="tabs">
                 <button class="tab active" onclick="showTab('upload')">Upload Students</button>
                 <button class="tab" onclick="showTab('events')">Events</button>
-                <button class="tab" onclick="showTab('manage')">Manage Data</button>
+                <button class="tab" onclick="showTab('manage')">Manage Students</button>
                 <button class="tab" onclick="showTab('analytics')">Analytics</button>
             </div>
             
@@ -377,8 +372,15 @@
                         <div class="upload-icon">📁</div>
                         <div class="upload-text">
                             <h3>Drop CSV file here or click to browse</h3>
-                            <p>Expected format: StudentID, FirstName, LastName, Email, Program, Year</p>
+                            <p>Required fields: StudentID, FirstName, LastName, Email</p>
+                            <p style="font-size: 0.9rem; margin-top: 5px;">Optional: Program, Year</p>
                         </div>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 20px 0;">
+                        <button class="btn btn-secondary" onclick="downloadTemplate()">
+                            📥 Download CSV Template
+                        </button>
                     </div>
                     
                     <input type="file" id="csvFile" class="file-input" accept=".csv" onchange="handleFileSelect(event)">
@@ -402,16 +404,93 @@
                     </div>
                     
                     <div id="status-message" class="hidden"></div>
+                    
+                    <!-- Archive Section -->
+                    <div style="margin-top: 50px; padding-top: 50px; border-top: 2px solid #e2e8f0;">
+                        <h2 style="margin-bottom: 30px; color: #2d3748;">Data Archive Management</h2>
+                        
+                        <!-- Clear Data Section -->
+                        <div style="background: #fff5f5; padding: 20px; border-radius: 15px; border: 2px solid #fc8181; margin-bottom: 30px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <h3 style="color: #e53e3e; margin-bottom: 10px;">🗑️ Clear All Student Data</h3>
+                                    <p style="color: #718096;">
+                                        Remove all student records from the database. You will be prompted to create a backup first.
+                                    </p>
+                                </div>
+                                <button class="btn" onclick="clearAllStudentData()" id="clear-data-btn" 
+                                        style="background: #e53e3e; color: white; padding: 12px 24px;">
+                                    Clear All Data
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                            <!-- Create Archive -->
+                            <div style="background: #f8f9ff; padding: 25px; border-radius: 15px; border: 2px solid #667eea;">
+                                <h3 style="color: #667eea; margin-bottom: 15px;">📦 Create Archive</h3>
+                                <p style="color: #718096; margin-bottom: 20px;">
+                                    Backup current student data with timestamp for future recovery
+                                </p>
+                                <input type="text" id="archive-description" placeholder="Archive description (optional)" 
+                                       style="width: 100%; padding: 12px; margin-bottom: 15px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                                <button class="btn btn-primary" onclick="createArchive()" id="create-archive-btn" style="width: 100%;">
+                                    Create Archive Backup
+                                </button>
+                            </div>
+                            
+                            <!-- Restore Archive -->
+                            <div style="background: #fff8f1; padding: 25px; border-radius: 15px; border: 2px solid #f6ad55;">
+                                <h3 style="color: #f6ad55; margin-bottom: 15px;">🔄 Restore Archive</h3>
+                                <p style="color: #718096; margin-bottom: 20px;">
+                                    Select an archive to view or restore student data
+                                </p>
+                                <select id="archive-select" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                                    <option value="">Loading archives...</option>
+                                </select>
+                                <div style="display: flex; gap: 10px;">
+                                    <button class="btn btn-secondary" onclick="viewArchive()" id="view-archive-btn" style="flex: 1;">
+                                        View Archive
+                                    </button>
+                                    <button class="btn btn-primary" onclick="restoreArchive()" id="restore-archive-btn" style="flex: 1; background: #f6ad55;">
+                                        Restore Data
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Archive History -->
+                        <div style="margin-top: 30px;">
+                            <h3 style="color: #2d3748; margin-bottom: 20px;">📋 Archive History</h3>
+                            <div id="archive-history" style="background: #f7fafc; padding: 20px; border-radius: 15px; min-height: 200px;">
+                                <p style="color: #718096; text-align: center;">Loading archive history...</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- Events Tab -->
                 <div id="events-tab" class="tab-pane">
                     <h2 style="margin-bottom: 30px; color: #2d3748;">Event Management</h2>
                     
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
-                        <div>
-                            <h3 style="color: #4a5568;">Scanning Events</h3>
-                            <p style="color: #718096;">Create and manage events for student scanning</p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; gap: 15px;">
+                        <div style="flex: 1; display: flex; gap: 15px; align-items: center;">
+                            <input type="text" id="event-search" placeholder="Search events by name or number..." 
+                                   onkeyup="applyEventFilters()" 
+                                   style="flex: 1; max-width: 300px; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                            
+                            <select id="event-year-filter" onchange="applyEventFilters()" 
+                                    style="padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer;">
+                                <option value="all">All Years</option>
+                                <!-- Years will be populated dynamically -->
+                            </select>
+                            
+                            <select id="event-status-filter" onchange="applyEventFilters()" 
+                                    style="padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer;">
+                                <option value="active">Active Events</option>
+                                <option value="inactive">Inactive Events</option>
+                                <option value="all">All Events</option>
+                            </select>
                         </div>
                         <button class="btn btn-primary" onclick="showNewEventForm()">Create New Event</button>
                     </div>
@@ -449,12 +528,42 @@
                 
                 <!-- Manage Tab -->
                 <div id="manage-tab" class="tab-pane">
-                    <h2 style="margin-bottom: 30px; color: #2d3748;">Manage Student Data</h2>
+                    <h2 style="margin-bottom: 30px; color: #2d3748;">Manage Students</h2>
                     
-                    <div style="margin-bottom: 30px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
                         <input type="text" id="search-input" placeholder="Search by Student ID, Name, or Email..." 
-                               style="width: 100%; padding: 15px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1.1rem;"
+                               style="flex: 1; max-width: 600px; padding: 15px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1.1rem;"
                                onkeyup="searchStudents()">
+                        <button class="btn btn-primary" onclick="showAddStudentForm()" style="margin-left: 20px;">
+                            ➕ Add Student
+                        </button>
+                    </div>
+                    
+                    <!-- Add Student Form -->
+                    <div id="add-student-form" class="hidden" style="background: #f8f9ff; padding: 25px; border-radius: 15px; margin-bottom: 30px; border: 2px solid #667eea;">
+                        <h4 style="color: #2d3748; margin-bottom: 20px;">Add New Student</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; color: #4a5568; font-weight: 600;">Student ID *</label>
+                                <input type="text" id="new-student-id" placeholder="e.g., 123456789" style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; color: #4a5568; font-weight: 600;">Email</label>
+                                <input type="email" id="new-student-email" placeholder="student@example.com" style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; color: #4a5568; font-weight: 600;">First Name *</label>
+                                <input type="text" id="new-student-firstname" placeholder="First Name" style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; color: #4a5568; font-weight: 600;">Last Name *</label>
+                                <input type="text" id="new-student-lastname" placeholder="Last Name" style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <button class="btn btn-secondary" onclick="hideAddStudentForm()">Cancel</button>
+                            <button class="btn btn-primary" onclick="addNewStudent()" id="add-student-btn">Add Student</button>
+                        </div>
                     </div>
                     
                     <div id="students-table-container">
