@@ -593,13 +593,49 @@ async function viewEventReport(eventId) {
         
         const event = eventDoc.data();
         
-        // Get scans for this event
-        const scansSnapshot = await db.collection('scans')
-            .where('listId', '==', eventId)
-            .orderBy('timestamp', 'desc')
-            .get();
+        // Get scans from BOTH structures using EVENT DOCUMENT ID (not event number)
+        const [flatScansSnapshot, nestedScansSnapshot] = await Promise.all([
+            // Flat structure (admin portal + new Flutter web app) - use eventId (document ID)
+            db.collection('scans')
+                .where('listId', '==', eventId)
+                .orderBy('timestamp', 'desc')
+                .get(),
+            // Nested structure (Android app) - use EVENT DOCUMENT ID as listId
+            db.collection('lists').doc(eventId)
+                .collection('scans')
+                .orderBy('timestamp', 'desc')
+                .get()
+        ]);
         
-        const scans = scansSnapshot.docs.map(doc => doc.data());
+        // Combine scans from both sources, avoiding duplicates by ID
+        const allScans = new Map();
+        
+        // Add flat structure scans
+        flatScansSnapshot.docs.forEach(doc => {
+            const scanData = doc.data();
+            allScans.set(doc.id, scanData);
+        });
+        
+        // Add nested structure scans (Android app data)
+        nestedScansSnapshot.docs.forEach(doc => {
+            const scanData = doc.data();
+            // Convert Android app format to admin portal format
+            const convertedScan = {
+                code: scanData.code,
+                timestamp: scanData.timestamp ? new Date(scanData.timestamp).getTime() : Date.now(),
+                listId: eventId,
+                deviceId: scanData.deviceId || '',
+                verified: scanData.processed || false,
+                symbology: scanData.symbology || '',
+                studentId: scanData.studentId || '',
+                firstName: '',
+                lastName: '',
+                email: ''
+            };
+            allScans.set(doc.id, convertedScan);
+        });
+        
+        const scans = Array.from(allScans.values());
         
         // Generate report HTML
         const reportHTML = `
@@ -607,7 +643,8 @@ async function viewEventReport(eventId) {
             <div style="margin: 20px 0;">
                 <strong>Total Scans:</strong> ${scans.length}<br>
                 <strong>Verified Students:</strong> ${scans.filter(s => s.verified).length}<br>
-                <strong>Unverified Scans:</strong> ${scans.filter(s => !s.verified).length}
+                <strong>Unverified Scans:</strong> ${scans.filter(s => !s.verified).length}<br>
+                <strong>Sources:</strong> Flat: ${flatScansSnapshot.size}, Nested: ${nestedScansSnapshot.size}
             </div>
             <div style="max-height: 300px; overflow-y: auto;">
                 <table class="preview-table">
@@ -617,6 +654,7 @@ async function viewEventReport(eventId) {
                             <th>Name</th>
                             <th>Time Scanned</th>
                             <th>Status</th>
+                            <th>Source</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -626,6 +664,7 @@ async function viewEventReport(eventId) {
                                 <td>${scan.firstName || ''} ${scan.lastName || ''}</td>
                                 <td>${new Date(scan.timestamp).toLocaleString()}</td>
                                 <td>${scan.verified ? '✅ Verified' : '❌ Not Found'}</td>
+                                <td>${flatScansSnapshot.docs.find(d => d.data().code === scan.code) ? 'Web' : 'Android'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -635,7 +674,7 @@ async function viewEventReport(eventId) {
         
         // You could open this in a modal or new window
         // For now, we'll just show a success message
-        showMessage(`Report generated: ${scans.length} total scans for event "${event.name}"`, 'success');
+        showMessage(`Report generated: ${scans.length} total scans for event "${event.name}" (${flatScansSnapshot.size} web + ${nestedScansSnapshot.size} android)`, 'success');
         
     } catch (error) {
         console.error('Error generating event report:', error);

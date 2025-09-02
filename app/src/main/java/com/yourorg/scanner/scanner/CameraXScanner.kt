@@ -19,7 +19,6 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-
 class CameraXScanner(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner,
@@ -63,6 +62,7 @@ class CameraXScanner(
         }
     }
 
+    @androidx.camera.core.ExperimentalGetImage
     private fun setupCamera() {
         val cameraProvider = this.cameraProvider ?: return
 
@@ -76,7 +76,6 @@ class CameraXScanner(
         // Image analysis use case for barcode scanning
         imageAnalysis = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setTargetResolution(android.util.Size(1280, 720))
             .build()
             .also { analysis ->
                 analysis.setAnalyzer(cameraExecutor) { imageProxy ->

@@ -53,7 +53,20 @@ class FirestoreSync {
                     return@addSnapshotListener
                 }
                 if (snap == null) return@addSnapshotListener
-                val items = snap.documents.mapNotNull { it.toObject(ScanRecord::class.java) }
+                val items = snap.documents.mapNotNull { doc ->
+                    try {
+                        val timestampObject = doc.get("timestamp")
+                        val timestamp = when (timestampObject) {
+                            is String -> timestampObject.toLongOrNull() ?: 0L
+                            is Long -> timestampObject
+                            else -> 0L
+                        }
+                        doc.toObject(ScanRecord::class.java)?.copy(timestamp = timestamp)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing scan record", e)
+                        null
+                    }
+                }
                 trySend(items)
             }
             awaitClose { reg.remove() }
