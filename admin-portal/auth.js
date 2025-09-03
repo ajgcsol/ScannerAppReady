@@ -100,37 +100,74 @@ async function loadUserProfile() {
             account: currentUser
         });
         
-        // Call Microsoft Graph API to get user details
-        const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
-            headers: {
-                'Authorization': `Bearer ${response.accessToken}`
-            }
-        });
+        // Call Microsoft Graph API to get user details and photo
+        const [profileResponse, photoResponse] = await Promise.all([
+            fetch('https://graph.microsoft.com/v1.0/me', {
+                headers: {
+                    'Authorization': `Bearer ${response.accessToken}`
+                }
+            }),
+            fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+                headers: {
+                    'Authorization': `Bearer ${response.accessToken}`
+                }
+            })
+        ]);
         
-        if (graphResponse.ok) {
-            const userProfile = await graphResponse.json();
-            updateUserDisplay(userProfile);
+        let userProfile = null;
+        let photoUrl = null;
+        
+        if (profileResponse.ok) {
+            userProfile = await profileResponse.json();
         }
+        
+        if (photoResponse.ok) {
+            const photoBlob = await photoResponse.blob();
+            photoUrl = URL.createObjectURL(photoBlob);
+        }
+        
+        updateUserDisplay(userProfile, photoUrl);
     } catch (error) {
         console.error("Failed to load user profile:", error);
+        // Try to update display with just the basic account info
+        updateUserDisplay(null, null);
     }
 }
 
 // Update UI with user information
-function updateUserDisplay(userProfile) {
+function updateUserDisplay(userProfile, photoUrl) {
     const userDisplayElement = document.getElementById('user-display');
-    if (userDisplayElement && userProfile) {
+    if (userDisplayElement) {
+        // Use current user account info if userProfile is null
+        const profile = userProfile || currentUser;
+        const displayName = profile?.displayName || profile?.name || profile?.username || 'User';
+        const email = profile?.mail || profile?.userPrincipalName || '';
+        const jobTitle = profile?.jobTitle || '';
+        
+        // Create avatar - use photo if available, otherwise use initials
+        let avatarContent;
+        if (photoUrl) {
+            avatarContent = `
+                <img src="${photoUrl}" alt="Profile" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.3);">
+            `;
+        } else {
+            const initials = displayName.charAt(0).toUpperCase();
+            avatarContent = `
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: #1e3c72; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.9rem; border: 2px solid rgba(255,255,255,0.3);">
+                    ${initials}
+                </div>
+            `;
+        }
+        
         userDisplayElement.innerHTML = `
             <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="width: 32px; height: 32px; border-radius: 50%; background: #1e3c72; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.9rem;">
-                    ${(userProfile.displayName || userProfile.userPrincipalName || 'U').charAt(0).toUpperCase()}
-                </div>
+                ${avatarContent}
                 <div>
                     <div style="font-weight: 600; font-size: 0.9rem; color: white;">
-                        ${userProfile.displayName || userProfile.userPrincipalName}
+                        ${displayName}
                     </div>
                     <div style="font-size: 0.8rem; opacity: 0.8; color: white;">
-                        ${userProfile.jobTitle || userProfile.mail || ''}
+                        ${jobTitle || email}
                     </div>
                 </div>
                 <button class="header-btn" onclick="logout()" style="margin-left: 10px;">
