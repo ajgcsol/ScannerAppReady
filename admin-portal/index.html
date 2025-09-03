@@ -428,6 +428,9 @@
                 <p>Student Event Attendance System</p>
             </div>
             <div class="header-right">
+                <div id="user-display" style="margin-right: 20px;">
+                    <!-- User info will be populated by auth.js -->
+                </div>
                 <button class="header-btn" onclick="showNotifications()">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -862,9 +865,16 @@
         }
     </style>
     
+    <!-- Authentication Libraries -->
+    <script src="https://alcdn.msauth.net/browser/2.38.1/js/msal-browser.min.js"></script>
+    
+    <!-- Firebase Libraries -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Application Scripts -->
+    <script src="auth.js"></script>
     <script src="admin-portal.js"></script>
 </body>
 </html>

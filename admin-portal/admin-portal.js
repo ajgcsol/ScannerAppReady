@@ -2424,6 +2424,16 @@ document.head.appendChild(styleSheet);
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    // Wait a moment for auth to initialize
+    setTimeout(() => {
+        if (window.isAuthenticated && window.isAuthenticated()) {
+            initializeApp();
+        }
+    }, 100);
+});
+
+// Initialize the main application after authentication
+function initializeApp() {
     // Load initial analytics
     loadAnalytics();
     
@@ -2436,7 +2446,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Set up drag and drop for the entire upload area
     const uploadArea = document.querySelector('.upload-area');
-    uploadArea.addEventListener('dragleave', function(e) {
-        e.currentTarget.classList.remove('dragover');
-    });
-});
+    if (uploadArea) {
+        uploadArea.addEventListener('dragleave', function(e) {
+            e.currentTarget.classList.remove('dragover');
+        });
+    }
+}
