@@ -22,30 +22,42 @@ let currentUser = null;
 
 // Initialize authentication
 function initAuth() {
-    msalInstance = new msal.PublicClientApplication(msalConfig);
-    
-    // Handle redirect response
-    msalInstance.handleRedirectPromise().then(response => {
-        if (response) {
-            console.log("Login successful:", response);
-            currentUser = response.account;
-            showAuthenticatedUI();
-            loadUserProfile();
-        } else {
-            // Check if user is already logged in
-            const accounts = msalInstance.getAllAccounts();
-            if (accounts.length > 0) {
-                currentUser = accounts[0];
+    try {
+        msalInstance = new msal.PublicClientApplication(msalConfig);
+        
+        // Handle redirect response
+        msalInstance.handleRedirectPromise().then(response => {
+            if (response) {
+                console.log("Login successful:", response);
+                currentUser = response.account;
                 showAuthenticatedUI();
                 loadUserProfile();
             } else {
-                showLoginUI();
+                // Check if user is already logged in
+                const accounts = msalInstance.getAllAccounts();
+                if (accounts.length > 0) {
+                    currentUser = accounts[0];
+                    showAuthenticatedUI();
+                    loadUserProfile();
+                } else {
+                    // Show login UI after a delay to let main app load first
+                    setTimeout(() => {
+                        showLoginUI();
+                    }, 1000);
+                }
             }
-        }
-    }).catch(error => {
-        console.error("Auth error:", error);
-        showLoginUI();
-    });
+        }).catch(error => {
+            console.error("Auth error:", error);
+            // Don't block the app, just show error and login
+            setTimeout(() => {
+                showLoginUI();
+            }, 1000);
+        });
+    } catch (error) {
+        console.error("Auth initialization failed:", error);
+        // Don't block the app if auth fails
+        alert("Authentication system failed to initialize. Please refresh the page.");
+    }
 }
 
 // Login function
@@ -192,8 +204,19 @@ function showLoginUI() {
 
 // Show authenticated UI
 function showAuthenticatedUI() {
-    // Reload the main application
-    location.reload();
+    // Hide login screen and show main app
+    const appContainer = document.querySelector('.container');
+    const mainContent = document.querySelector('.main-card');
+    
+    if (appContainer && appContainer.innerHTML.includes('Sign in with Microsoft 365')) {
+        // We're showing login screen, need to reload to show main app
+        location.reload();
+    } else {
+        // Main app is already loaded, just initialize it
+        if (window.initializeApp) {
+            window.initializeApp();
+        }
+    }
 }
 
 // Check if user is authenticated

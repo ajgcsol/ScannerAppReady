@@ -2424,27 +2424,49 @@ document.head.appendChild(styleSheet);
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    // Wait a moment for auth to initialize
+    // Always initialize the app - auth.js will handle showing login screen if needed
+    initializeApp();
+    
+    // Set up auth check after a brief delay
     setTimeout(() => {
-        if (window.isAuthenticated && window.isAuthenticated()) {
-            initializeApp();
+        if (window.isAuthenticated && !window.isAuthenticated()) {
+            // User is not authenticated, auth.js should show login screen
+            console.log('User not authenticated, login screen should be shown');
+        } else if (window.isAuthenticated && window.isAuthenticated()) {
+            // User is authenticated, make sure app is fully loaded
+            console.log('User authenticated, app ready');
         }
-    }, 100);
+    }, 500);
 });
 
-// Initialize the main application after authentication
+// Initialize the main application
 function initializeApp() {
-    // Load initial analytics
-    loadAnalytics();
+    // Always set up basic UI functionality first
+    setupTabNavigation();
+    setupDragAndDrop();
     
-    // Load archives list and history when on upload tab
-    loadArchivesList();
-    loadArchiveHistory();
-    
-    // Check for completed events
-    checkForCompletedEvents();
-    
-    // Set up drag and drop for the entire upload area
+    // Load data (these will be called after authentication if needed)
+    setTimeout(() => {
+        if (window.isAuthenticated && window.isAuthenticated()) {
+            loadAnalytics();
+            loadArchivesList();
+            loadArchiveHistory();
+            checkForCompletedEvents();
+        }
+    }, 100);
+}
+
+// Set up tab navigation
+function setupTabNavigation() {
+    // Ensure tabs are clickable
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.style.pointerEvents = 'auto';
+        tab.style.cursor = 'pointer';
+    });
+}
+
+// Set up drag and drop
+function setupDragAndDrop() {
     const uploadArea = document.querySelector('.upload-area');
     if (uploadArea) {
         uploadArea.addEventListener('dragleave', function(e) {
