@@ -51,20 +51,25 @@ function initAuth() {
 // Login function
 async function login() {
     try {
+        // Try popup first, fall back to redirect if it fails
         const response = await msalInstance.loginPopup(loginRequest);
         currentUser = response.account;
         showAuthenticatedUI();
         loadUserProfile();
     } catch (error) {
-        console.error("Login failed:", error);
-        alert("Login failed. Please try again.");
+        console.error("Login popup failed, trying redirect:", error);
+        // Fall back to redirect if popup fails
+        msalInstance.loginRedirect(loginRequest);
     }
 }
 
 // Logout function
 async function logout() {
     try {
-        await msalInstance.logoutPopup();
+        await msalInstance.logoutPopup({
+            postLogoutRedirectUri: window.location.origin,
+            mainWindowRedirectUri: window.location.origin
+        });
         currentUser = null;
         showLoginUI();
     } catch (error) {
