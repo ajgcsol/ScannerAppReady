@@ -95,35 +95,63 @@ async function logout() {
 // Load user profile information
 async function loadUserProfile() {
     try {
+        console.log("Loading user profile...");
         const response = await msalInstance.acquireTokenSilent({
             ...loginRequest,
             account: currentUser
         });
         
-        // Call Microsoft Graph API to get user details and photo
-        const [profileResponse, photoResponse] = await Promise.all([
-            fetch('https://graph.microsoft.com/v1.0/me', {
-                headers: {
-                    'Authorization': `Bearer ${response.accessToken}`
-                }
-            }),
-            fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
-                headers: {
-                    'Authorization': `Bearer ${response.accessToken}`
-                }
-            })
-        ]);
+        console.log("Got access token, fetching profile and photo...");
+        
+        // First get the profile
+        const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+            headers: {
+                'Authorization': `Bearer ${response.accessToken}`
+            }
+        });
         
         let userProfile = null;
-        let photoUrl = null;
-        
         if (profileResponse.ok) {
             userProfile = await profileResponse.json();
+            console.log("Profile data:", userProfile);
+        } else {
+            console.log("Profile response not ok:", profileResponse.status);
         }
         
-        if (photoResponse.ok) {
-            const photoBlob = await photoResponse.blob();
-            photoUrl = URL.createObjectURL(photoBlob);
+        // Then try to get the photo
+        let photoUrl = null;
+        try {
+            console.log("Attempting to fetch photo...");
+            const photoResponse = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+                headers: {
+                    'Authorization': `Bearer ${response.accessToken}`
+                }
+            });
+            
+            if (photoResponse.ok) {
+                console.log("Photo response ok, creating blob URL...");
+                const photoBlob = await photoResponse.blob();
+                photoUrl = URL.createObjectURL(photoBlob);
+                console.log("Photo URL created:", photoUrl);
+            } else {
+                console.log("Photo response failed:", photoResponse.status, photoResponse.statusText);
+                // Try alternative photo endpoint
+                const altPhotoResponse = await fetch('https://graph.microsoft.com/v1.0/me/photos/48x48/$value', {
+                    headers: {
+                        'Authorization': `Bearer ${response.accessToken}`
+                    }
+                });
+                if (altPhotoResponse.ok) {
+                    console.log("Alternative photo response ok...");
+                    const photoBlob = await altPhotoResponse.blob();
+                    photoUrl = URL.createObjectURL(photoBlob);
+                    console.log("Alternative photo URL created:", photoUrl);
+                } else {
+                    console.log("Alternative photo also failed:", altPhotoResponse.status);
+                }
+            }
+        } catch (photoError) {
+            console.log("Photo fetch error:", photoError);
         }
         
         updateUserDisplay(userProfile, photoUrl);

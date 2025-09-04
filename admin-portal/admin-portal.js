@@ -847,24 +847,63 @@ async function exportEventText(eventId) {
         ]);
         
         // Combine and deduplicate scans by student ID
+        // Only include VALID scans (verified students with correct ID format)
         const uniqueStudentIds = new Set();
+        let rejectedCount = 0;
+        let invalidFormatCount = 0;
+        let unverifiedCount = 0;
         
-        // Add flat structure scans
+        // Regex pattern for valid student ID: 2 letters followed by 7 numbers
+        const validIdPattern = /^[A-Za-z]{2}\d{7}$/;
+        
+        // Add flat structure scans - only verified ones with valid format
         flatScansSnapshot.docs.forEach(doc => {
             const scan = doc.data();
-            const cleanId = scan.code.replace(/\s/g, '');
-            if (cleanId.length === 9) {
-                uniqueStudentIds.add(cleanId);
+            const cleanId = scan.code.replace(/\s/g, '').toUpperCase();
+            
+            // Check format first
+            if (!validIdPattern.test(cleanId)) {
+                invalidFormatCount++;
+                console.log(`Rejected invalid format: ${cleanId}`);
+                rejectedCount++;
+                return;
             }
+            
+            // Then check verification
+            if (scan.verified !== true) {
+                unverifiedCount++;
+                console.log(`Rejected unverified: ${cleanId}`);
+                rejectedCount++;
+                return;
+            }
+            
+            // Only add if both checks pass
+            uniqueStudentIds.add(cleanId);
         });
         
-        // Add nested structure scans
+        // Add nested structure scans - only verified ones with valid format
         nestedScansSnapshot.docs.forEach(doc => {
             const scan = doc.data();
-            const cleanId = scan.code.replace(/\s/g, '');
-            if (cleanId.length === 9) {
-                uniqueStudentIds.add(cleanId);
+            const cleanId = scan.code.replace(/\s/g, '').toUpperCase();
+            
+            // Check format first
+            if (!validIdPattern.test(cleanId)) {
+                invalidFormatCount++;
+                console.log(`Rejected invalid format (Android): ${cleanId}`);
+                rejectedCount++;
+                return;
             }
+            
+            // Then check verification (Android uses processed field)
+            if (scan.processed !== true) {
+                unverifiedCount++;
+                console.log(`Rejected unprocessed (Android): ${cleanId}`);
+                rejectedCount++;
+                return;
+            }
+            
+            // Only add if both checks pass
+            uniqueStudentIds.add(cleanId);
         });
         
         // Convert to sorted array and generate text content
@@ -878,7 +917,15 @@ async function exportEventText(eventId) {
         const filename = `Event_${event.eventNumber}_${dateString}.txt`;
         
         downloadTextFile(textContent, filename);
-        showMessage(`Exported ${sortedIds.length} unique student IDs to ${filename} (removed ${flatScansSnapshot.size + nestedScansSnapshot.size - sortedIds.length} duplicates)`, 'success');
+        
+        const totalScans = flatScansSnapshot.size + nestedScansSnapshot.size;
+        const duplicatesAndErrors = totalScans - sortedIds.length;
+        showMessage(
+            `Exported ${sortedIds.length} valid student IDs to ${filename}. ` +
+            `Rejected ${rejectedCount} scans (${invalidFormatCount} invalid format, ${unverifiedCount} unverified). ` +
+            `Total scans processed: ${totalScans}`, 
+            'success'
+        );
         
     } catch (error) {
         console.error('Error exporting text data:', error);
@@ -958,27 +1005,74 @@ async function exportEventErrors(eventId) {
         
         const event = eventDoc.data();
         
-        // Get scans for this event
-        const scansSnapshot = await db.collection('scans')
-            .where('eventId', '==', eventId)
-            .get();
+        // Get scans from BOTH structures
+        const [flatScansSnapshot, nestedScansSnapshot] = await Promise.all([
+            // Flat structure
+            db.collection('scans')
+                .where('listId', '==', eventId)
+                .get(),
+            // Nested structure (Android app)
+            db.collection('lists').doc(eventId)
+                .collection('scans')
+                .get()
+        ]);
         
-        const scans = scansSnapshot.docs.map(doc => doc.data());
+        // Regex pattern for valid student ID: 2 letters followed by 7 numbers
+        const validIdPattern = /^[A-Za-z]{2}\d{7}$/;
         
-        // Filter for invalid/error records
-        const invalidScans = scans.filter(scan => {
-            const cleanId = scan.code.replace(/\s/g, '');
-            return cleanId.length !== 9 || !scan.verified;
+        // Collect all error scans
+        const errorScans = [];
+        
+        // Process flat structure scans
+        flatScansSnapshot.docs.forEach(doc => {
+            const scan = doc.data();
+            const cleanId = scan.code.replace(/\s/g, '').toUpperCase();
+            let errorReason = null;
+            
+            if (!validIdPattern.test(cleanId)) {
+                errorReason = 'Invalid ID Format (expected: 2 letters + 7 numbers)';
+            } else if (scan.verified === false) {
+                errorReason = 'Student Not Found in Database';
+            }
+            
+            if (errorReason) {
+                errorScans.push({
+                    code: scan.code,
+                    reason: errorReason,
+                    source: 'Web Portal'
+                });
+            }
         });
         
-        if (invalidScans.length === 0) {
+        // Process nested structure scans
+        nestedScansSnapshot.docs.forEach(doc => {
+            const scan = doc.data();
+            const cleanId = scan.code.replace(/\s/g, '').toUpperCase();
+            let errorReason = null;
+            
+            if (!validIdPattern.test(cleanId)) {
+                errorReason = 'Invalid ID Format (expected: 2 letters + 7 numbers)';
+            } else if (scan.processed === false || scan.verified === false) {
+                errorReason = 'Student Not Found in Database';
+            }
+            
+            if (errorReason) {
+                errorScans.push({
+                    code: scan.code,
+                    reason: errorReason,
+                    source: 'Android App'
+                });
+            }
+        });
+        
+        if (errorScans.length === 0) {
             showMessage('No errors found for this event.', 'info');
             return;
         }
         
-        // Generate error content
-        const errorContent = invalidScans.map(scan => {
-            return `${scan.code} - ${scan.verified ? 'Invalid ID Length' : 'Student Not Found'}`;
+        // Generate error content with more details
+        const errorContent = errorScans.map(error => {
+            return `${error.code} - ${error.reason} (Source: ${error.source})`;
         }).join('\n');
         
         const today = new Date();
@@ -986,7 +1080,7 @@ async function exportEventErrors(eventId) {
         const filename = `Event_${event.eventNumber}_Errors_${dateString}.txt`;
         
         downloadTextFile(errorContent, filename);
-        showMessage(`Exported ${invalidScans.length} error records to ${filename}`, 'success');
+        showMessage(`Exported ${errorScans.length} error records to ${filename}`, 'success');
         
     } catch (error) {
         console.error('Error exporting errors:', error);
