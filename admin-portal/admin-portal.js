@@ -11,10 +11,12 @@ const firebaseConfig = {
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const storage = firebase.storage();
 
 // Global variables
 let currentStudents = [];
 let csvData = null;
+let studentImageCache = new Map();
 
 // Tab management
 function showTab(tabName) {
@@ -237,7 +239,7 @@ function displayStudents(students) {
     if (students.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" style="text-align: center; padding: 40px; color: #718096;">
+                <td colspan="6" style="text-align: center; padding: 40px; color: #718096;">
                     No students found. Upload CSV data to get started.
                 </td>
             </tr>
@@ -245,8 +247,20 @@ function displayStudents(students) {
         return;
     }
     
-    tbody.innerHTML = students.map(student => `
-        <tr>
+    // Clear existing content
+    tbody.innerHTML = '';
+    
+    students.forEach(student => {
+        const row = document.createElement('tr');
+        
+        // Photo column
+        const photoCell = document.createElement('td');
+        photoCell.style.padding = '12px';
+        const imageElement = createStudentImageElement(student.studentId, '40px');
+        photoCell.appendChild(imageElement);
+        
+        // Student data columns
+        row.innerHTML = `
             <td>${student.studentId || ''}</td>
             <td>${student.firstName || ''}</td>
             <td>${student.lastName || ''}</td>
@@ -266,8 +280,12 @@ function displayStudents(students) {
                     </button>
                 </div>
             </td>
-        </tr>
-    `).join('');
+        `;
+        
+        // Insert photo cell as first column
+        row.insertBefore(photoCell, row.firstChild);
+        tbody.appendChild(row);
+    });
 }
 
 function searchStudents() {
@@ -385,6 +403,276 @@ async function updateAnalytics() {
     } catch (error) {
         console.error('Error updating analytics:', error);
     }
+}
+
+// Student Image Functions
+async function getStudentImageUrl(studentId) {
+    // Check cache first
+    if (studentImageCache.has(studentId)) {
+        return studentImageCache.get(studentId);
+    }
+    
+    try {
+        // Try common image extensions
+        const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+        
+        for (const ext of extensions) {
+            try {
+                const imageRef = storage.ref(`student-photos/${studentId}.${ext}`);
+                const url = await imageRef.getDownloadURL();
+                // Cache the successful URL
+                studentImageCache.set(studentId, url);
+                return url;
+            } catch (error) {
+                // Continue to next extension if this one fails
+                continue;
+            }
+        }
+        
+        // No image found, cache null to avoid repeated lookups
+        studentImageCache.set(studentId, null);
+        return null;
+        
+    } catch (error) {
+        console.warn(`Error loading image for student ${studentId}:`, error);
+        studentImageCache.set(studentId, null);
+        return null;
+    }
+}
+
+function createStudentImageElement(studentId, size = '40px') {
+    const imgContainer = document.createElement('div');
+    imgContainer.style.cssText = `
+        width: ${size}; 
+        height: ${size}; 
+        border-radius: 50%; 
+        overflow: hidden; 
+        background: #f7fafc; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+    `;
+    
+    // Create placeholder initially
+    imgContainer.innerHTML = `
+        <div style="color: #a0aec0; font-size: 12px; font-weight: 600;">
+            ${studentId ? studentId.substring(0, 2).toUpperCase() : '??'}
+        </div>
+    `;
+    
+    // Load actual image asynchronously
+    if (studentId) {
+        getStudentImageUrl(studentId).then(imageUrl => {
+            if (imageUrl) {
+                imgContainer.innerHTML = `
+                    <img src="${imageUrl}" 
+                         alt="Student ${studentId}" 
+                         style="width: 100%; height: 100%; object-fit: cover;"
+                         onerror="this.style.display='none'">
+                `;
+            }
+        });
+    }
+    
+    return imgContainer;
+}
+
+// Photo Upload Functions
+function showPhotoUploadForm() {
+    const content = `
+        <div style="padding: 20px;">
+            <h3 style="margin-bottom: 20px;">Bulk Student Photo Upload</h3>
+            <p style="color: #4a5568; margin-bottom: 20px;">
+                Upload multiple student photos at once. Images should be named with the student ID 
+                (e.g., "AB1234567.jpg", "XY9876543.png"). Supported formats: JPG, PNG, WEBP.
+            </p>
+            
+            <div id="photo-upload-area" 
+                 style="border: 3px dashed #667eea; border-radius: 15px; padding: 40px; text-align: center; 
+                        background: #f8f9ff; margin-bottom: 20px; cursor: pointer;"
+                 onclick="document.getElementById('photo-files').click()"
+                 ondrop="handlePhotoDrop(event)" 
+                 ondragover="handlePhotoDragOver(event)"
+                 ondragleave="handlePhotoDragLeave(event)">
+                <svg width="48" height="48" style="color: #667eea; margin-bottom: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21,15 16,10 5,21"/>
+                </svg>
+                <p style="margin: 0; color: #4a5568; font-size: 1.1rem;">
+                    <strong>Drop photos here or click to select</strong><br>
+                    <span style="font-size: 0.9rem; color: #718096;">
+                        Multiple files supported • Max 5MB per file
+                    </span>
+                </p>
+            </div>
+            
+            <input type="file" id="photo-files" multiple accept="image/*" style="display: none;" onchange="handlePhotoFiles(this.files)">
+            
+            <div id="photo-upload-progress" style="display: none; margin-top: 20px;">
+                <h4>Upload Progress</h4>
+                <div id="photo-progress-list"></div>
+                <div style="margin-top: 15px;">
+                    <button class="btn btn-success" onclick="startPhotoUpload()" id="start-upload-btn">
+                        Start Upload
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearPhotoQueue()" style="margin-left: 10px;">
+                        Clear Queue
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    showModal('Upload Student Photos', content);
+}
+
+let photoUploadQueue = [];
+
+function handlePhotoDragOver(event) {
+    event.preventDefault();
+    event.currentTarget.style.borderColor = '#5a67d8';
+    event.currentTarget.style.background = '#f0f4ff';
+}
+
+function handlePhotoDragLeave(event) {
+    event.currentTarget.style.borderColor = '#667eea';
+    event.currentTarget.style.background = '#f8f9ff';
+}
+
+function handlePhotoDrop(event) {
+    event.preventDefault();
+    const uploadArea = event.currentTarget;
+    uploadArea.style.borderColor = '#667eea';
+    uploadArea.style.background = '#f8f9ff';
+    
+    const files = event.dataTransfer.files;
+    handlePhotoFiles(files);
+}
+
+function handlePhotoFiles(files) {
+    photoUploadQueue = [];
+    const progressSection = document.getElementById('photo-upload-progress');
+    const progressList = document.getElementById('photo-progress-list');
+    
+    if (files.length === 0) {
+        progressSection.style.display = 'none';
+        return;
+    }
+    
+    // Validate and queue files
+    let validFiles = 0;
+    Array.from(files).forEach(file => {
+        const fileName = file.name.toLowerCase();
+        const fileExtension = fileName.split('.').pop();
+        const studentId = fileName.replace(/\.(jpg|jpeg|png|webp)$/, '').toUpperCase();
+        
+        // Validate file type
+        if (!['jpg', 'jpeg', 'png', 'webp'].includes(fileExtension)) {
+            console.warn(`Skipping ${file.name}: unsupported file type`);
+            return;
+        }
+        
+        // Validate file size (5MB max)
+        if (file.size > 5 * 1024 * 1024) {
+            console.warn(`Skipping ${file.name}: file too large (max 5MB)`);
+            return;
+        }
+        
+        // Validate student ID format (2 letters + 7 numbers)
+        const idPattern = /^[A-Za-z]{2}\d{7}$/;
+        if (!idPattern.test(studentId)) {
+            console.warn(`Skipping ${file.name}: invalid student ID format (expected: 2 letters + 7 numbers)`);
+            return;
+        }
+        
+        photoUploadQueue.push({
+            file: file,
+            studentId: studentId,
+            fileName: file.name,
+            size: file.size,
+            status: 'queued'
+        });
+        validFiles++;
+    });
+    
+    // Display queue
+    progressList.innerHTML = photoUploadQueue.map((item, index) => `
+        <div id="photo-item-${index}" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px;">
+            <div>
+                <strong>${item.studentId}</strong> 
+                <span style="color: #718096;">(${formatFileSize(item.size)})</span>
+            </div>
+            <div id="photo-status-${index}" style="color: #718096;">Queued</div>
+        </div>
+    `).join('');
+    
+    progressSection.style.display = validFiles > 0 ? 'block' : 'none';
+    
+    if (validFiles === 0) {
+        showMessage('No valid photo files found. Please check file names and formats.', 'error');
+    } else {
+        showMessage(`${validFiles} photos queued for upload.`, 'info');
+    }
+}
+
+async function startPhotoUpload() {
+    if (photoUploadQueue.length === 0) {
+        showMessage('No photos to upload.', 'error');
+        return;
+    }
+    
+    const startBtn = document.getElementById('start-upload-btn');
+    startBtn.disabled = true;
+    startBtn.textContent = 'Uploading...';
+    
+    let successful = 0;
+    let failed = 0;
+    
+    for (let i = 0; i < photoUploadQueue.length; i++) {
+        const item = photoUploadQueue[i];
+        const statusElement = document.getElementById(`photo-status-${i}`);
+        
+        try {
+            statusElement.textContent = 'Uploading...';
+            statusElement.style.color = '#3182ce';
+            
+            // Upload to Firebase Storage
+            const storageRef = storage.ref(`student-photos/${item.studentId}.${item.file.name.split('.').pop()}`);
+            await storageRef.put(item.file);
+            
+            // Update cache to include new image
+            const downloadUrl = await storageRef.getDownloadURL();
+            studentImageCache.set(item.studentId, downloadUrl);
+            
+            statusElement.textContent = '✅ Uploaded';
+            statusElement.style.color = '#22543d';
+            successful++;
+            
+        } catch (error) {
+            console.error(`Failed to upload ${item.fileName}:`, error);
+            statusElement.textContent = '❌ Failed';
+            statusElement.style.color = '#e53e3e';
+            failed++;
+        }
+    }
+    
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start Upload';
+    
+    showMessage(`Upload complete: ${successful} successful, ${failed} failed.`, successful > 0 ? 'success' : 'error');
+    
+    // Refresh student display to show new photos
+    if (successful > 0) {
+        displayStudents(currentStudents);
+    }
+}
+
+function clearPhotoQueue() {
+    photoUploadQueue = [];
+    document.getElementById('photo-upload-progress').style.display = 'none';
+    document.getElementById('photo-files').value = '';
 }
 
 // Utility functions
@@ -1429,7 +1717,14 @@ async function viewDetailedScans(eventId) {
                                 ${scansWithDetails.map((scan, index) => `
                                     <tr class="scan-row">
                                         <td style="padding: 12px;">${index + 1}</td>
-                                        <td style="padding: 12px; font-weight: 600;">${scan.code}</td>
+                                        <td style="padding: 12px;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <div id="scan-photo-${index}" style="width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: #f7fafc; display: flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; font-size: 10px; color: #a0aec0; font-weight: 600;">
+                                                    ${scan.code.substring(0, 2).toUpperCase()}
+                                                </div>
+                                                <span style="font-weight: 600;">${scan.code}</span>
+                                            </div>
+                                        </td>
                                         <td style="padding: 12px;">${scan.firstName || ''} ${scan.lastName || ''}</td>
                                         <td style="padding: 12px;">${scan.email || '-'}</td>
                                         <td style="padding: 12px;">${scan.program || '-'}</td>
@@ -1472,6 +1767,21 @@ async function viewDetailedScans(eventId) {
         
         // Store scans data for filtering
         window.currentScansData = scansWithDetails;
+        
+        // Load student photos for the scan modal
+        scansWithDetails.forEach((scan, index) => {
+            getStudentImageUrl(scan.code).then(imageUrl => {
+                const photoElement = document.getElementById(`scan-photo-${index}`);
+                if (photoElement && imageUrl) {
+                    photoElement.innerHTML = `
+                        <img src="${imageUrl}" 
+                             alt="Student ${scan.code}" 
+                             style="width: 100%; height: 100%; object-fit: cover;"
+                             onerror="this.style.display='none'">
+                    `;
+                }
+            });
+        });
         
         console.log('Modal created and added to DOM');
         clearMessage();
@@ -1719,16 +2029,23 @@ async function viewStudentDetails(studentId) {
         const student = studentDoc.data();
         
         const content = `
-            <div class="info-section">
-                <h3>Student Information</h3>
-                <p><strong>Student ID:</strong> ${student.studentId || 'N/A'}</p>
-                <p><strong>Name:</strong> ${student.firstName || ''} ${student.lastName || ''}</p>
-                <p><strong>Email:</strong> ${student.email || 'N/A'}</p>
-                <p><strong>Program:</strong> ${student.program || 'Not specified'}</p>
-                <p><strong>Year:</strong> ${student.year || 'Not specified'}</p>
-                <p><strong>Status:</strong> ${student.active ? 'Active' : 'Inactive'}</p>
-                <p><strong>Added:</strong> ${student.uploadedAt ? new Date(student.uploadedAt.seconds * 1000).toLocaleString() : 'Unknown'}</p>
-                <p><strong>Added Method:</strong> ${student.addedManually ? 'Manual Entry' : 'CSV Upload'}</p>
+            <div class="info-section" style="display: flex; gap: 20px; align-items: flex-start;">
+                <div id="student-detail-photo" style="width: 80px; height: 80px; border-radius: 50%; overflow: hidden; background: #f7fafc; display: flex; align-items: center; justify-content: center; border: 2px solid #e2e8f0; flex-shrink: 0;">
+                    <div style="color: #a0aec0; font-size: 16px; font-weight: 600;">
+                        ${student.studentId ? student.studentId.substring(0, 2).toUpperCase() : '??'}
+                    </div>
+                </div>
+                <div style="flex: 1;">
+                    <h3>Student Information</h3>
+                    <p><strong>Student ID:</strong> ${student.studentId || 'N/A'}</p>
+                    <p><strong>Name:</strong> ${student.firstName || ''} ${student.lastName || ''}</p>
+                    <p><strong>Email:</strong> ${student.email || 'N/A'}</p>
+                    <p><strong>Program:</strong> ${student.program || 'Not specified'}</p>
+                    <p><strong>Year:</strong> ${student.year || 'Not specified'}</p>
+                    <p><strong>Status:</strong> ${student.active ? 'Active' : 'Inactive'}</p>
+                    <p><strong>Added:</strong> ${student.uploadedAt ? new Date(student.uploadedAt.seconds * 1000).toLocaleString() : 'Unknown'}</p>
+                    <p><strong>Added Method:</strong> ${student.addedManually ? 'Manual Entry' : 'CSV Upload'}</p>
+                </div>
             </div>
             
             <div class="info-section">
@@ -1738,6 +2055,19 @@ async function viewStudentDetails(studentId) {
         `;
         
         showModal(`Student Details: ${student.firstName} ${student.lastName}`, content);
+        
+        // Load student photo
+        getStudentImageUrl(student.studentId).then(imageUrl => {
+            const photoElement = document.getElementById('student-detail-photo');
+            if (photoElement && imageUrl) {
+                photoElement.innerHTML = `
+                    <img src="${imageUrl}" 
+                         alt="Student ${student.studentId}" 
+                         style="width: 100%; height: 100%; object-fit: cover;"
+                         onerror="this.style.display='none'">
+                `;
+            }
+        });
         
         // Load scan history
         loadStudentScanHistory(studentId);
